@@ -1,0 +1,15 @@
+get_pos:
+  desc: "Get Position"
+slew:
+  desc: "Slew (Left, Right, Up, Down)"
+  dir:
+    - up
+    - dn
+    - left
+    - right
+goto:
+  desc: "Go to Target Azimuth Elevation"
+  az: 0.0
+  el: 0.0
+stop:
+  desc: "Stop slew motion"
