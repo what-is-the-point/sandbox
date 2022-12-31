@@ -32,8 +32,8 @@ class Simple_CLI(cmd.Cmd, threading.Thread):
         self.setName(self.cfg['name'])
         self.logger = logging.getLogger(self.cfg['main_log'])
 
-        self.cmd_q = Queue()
-        self.rx_q = Queue()
+        self.ctl_q = Queue() #Control Queue, for program control
+        self.cmd_q = Queue() #Command Queue, for hardware control
         self.logger.info("Initializing {}".format(self.name))
 
         # self.msgs = self._initialize_packets()
@@ -50,7 +50,7 @@ class Simple_CLI(cmd.Cmd, threading.Thread):
         }
 
     def run(self):
-        time.sleep(1)
+        time.sleep(1.5)
         #os.system('reset')
         self.cmdloop('Send Control Commands To Telescope')
         self.logger.warning('{:s} Terminated'.format(self.name))
@@ -128,130 +128,50 @@ class Simple_CLI(cmd.Cmd, threading.Thread):
         time.sleep(0.001)
 
 
-    def _generate_tracking_service_message(self, msg):
-        """
-        Message is a RabbitMQ Message
-        Convert to Generic Tracking Daemon Message
-        """
-        # print(json.dumps(msg, indent=2))
-        t_msg = {}
-        t_msg['head'] = {}
-        t_msg['head']['session_id'] = msg['rmq']['correlation_id']
-        t_msg['head']['src']        = msg['rmq']['app_id']
-        t_msg['head']['msg_id']     = msg['rmq']['message_id']
-        if "cmd" in msg['rmq']['routing_key']:
-            t_msg['head']['dest'] = "device"
-        elif "ctl" in msg['rmq']['routing_key']:
-            t_msg['head']['dest'] = "daemon"
-        else: t_msg['type'] = None
-
-        cmd_key = self.__parse_rmq_key(msg['rmq']['routing_key'])
-        if cmd_key:
-            t_msg['body']            = {}
-            t_msg['body']['type']    = cmd_key
-            t_msg['body']['params']  = msg['msg']['parameters']
-            self.rx_q.put(t_msg)
-        else:
-            return None
-
     def _send_message(self, idx, key, msg):
-        print(idx, key, msg)
-        del msg['desc']
+        self.t_msg = {}
+        self.t_msg['head'] = {}
+        self.t_msg['head']['session_id'] = None #msg['rmq']['correlation_id']
+        self.t_msg['head']['msg_id']     = None #msg['rmq']['message_id']
+        self.t_msg['head']['src']        = self.cfg['name'] #msg['rmq']['app_id']
+        self.t_msg['head']['dest'] = "device"
+        self.t_msg['body'] = {}
+        self.t_msg['body']['type'] = key
+        self.t_msg['body']['params'] = {}
 
         if key == 'goto':
-            msg['az'] = float(input("  Azimuth: "))
-            msg['el'] = float(input("Elevation: "))
+            az = float(input("  Azimuth: "))
+            el = float(input("Elevation: "))
+            self.t_msg['body']['params']['azimuth'] = az
+            self.t_msg['body']['params']['elevation'] = el
         elif key =='slew':
             print('Direction Options: {}'.format(msg['dir']))
             dir = input("Direction: ")
             if dir not in msg['dir']:
                 print('invalid direction')
                 return
-            else: msg['dir']=dir
+            else: self.t_msg['body']['params']['dir']=dir
+        elif key =='speed':
+            print('Speed Options: {}'.format(msg['speed']))
+            speed = input("Speed: ")
+            if speed not in msg['speed']:
+                print('invalid speed')
+                return
+            else: self.t_msg['body']['params']['speed']=speed
+        elif key =='focus_speed':
+            print('Speed Options: slow, fast')
+            speed = input("Speed: ")
+            if speed not in msg['speed']:
+                print('invalid speed')
+                return
+            else: self.t_msg['body']['params']['speed']=speed
 
-        cmd_dict={
-            "type":"CMD",
-            "cmd":"SEND",
-            "key": key,
-            "msg": msg
-        }
-        self.logger.info("Sending Message: {:s}:{:s}".format(key, json.dumps(msg)))
-        self.cmd_q.put(cmd_dict)
-
-    def _send_message_old(self, idx, key, msg):
-        self.new_msg = copy.deepcopy(msg)
-        valid = True
-        for k,v in msg['parameters'].items():
-            if k != "datetime":
-                try:
-                    depth = len(v.items())
-                except:
-                    depth = 0
-
-                if depth == 0:
-                    value = input("Value for {:s}: ".format(k))
-                    value = self._validate_input(k, value)
-                    if value == None: valid = False
-                    self.new_msg['parameters'][k] = value
-                elif depth > 0:
-                    print("{:s}:".format(k))
-                    for nk, nv in msg['parameters'][k].items():
-                        value = input("Value for {:s}: ".format(nk))
-                        value = self._validate_input(nk, value)
-                        if value == None: valid = False
-                        self.new_msg['parameters'][k][nk] = value
-
-        if valid:
-            self.key = key
-            self._send_valid()
-        else:
-            self.logger.warning("Command Not Sent: {:s}".format(key))
-        time.sleep(0.0001)
-
-    def _send_valid(self):
-        '''
-        send last valid command
-        syntax: send <name> OR send <index>
-        get packet name and index using \'list\' command
-        '''
-        self.new_msg['parameters']['datetime'] = datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.%fZ")
-        cmd_dict={
-            "type":"CMD",
-            "cmd":"SEND",
-            "key": self.key,
-            "msg": self.new_msg
-        }
-        self.logger.info("Sending Message: {:s}".format(self.key))
-        self.cmd_q.put(cmd_dict)
-
-    def do_last_valid(self, line):
-        ''' Send last valid command again '''
-        if self.new_msg != None: self._send_valid()
-        else: self.logger.info("Must send 1 valid command before using")
-
-    def _validate_input(self, k, val):
-        bool_keys = ['direction']
-        int_keys = ['position', 'rate']
-        float_keys = []
-        try:
-            if any(sub_str in k for sub_str in int_keys):
-                new_val = int(val)
-            if any(sub_str in k for sub_str in float_keys):
-                new_val = float(val)
-            if any(sub_str in k for sub_str in bool_keys):
-                if isinstance(val, str):
-                    if val=="": new_val=True
-                    else: new_val = val.lower().capitalize() == "True"
-                elif isinstance(val, (float, int)):
-                    new_val = bool(val)
-            return new_val
-        except Exception as e:
-            self.logger.warning("invalid datatype for {:s}".format(k))
-            self.logger.warning(e)
-            return None
+        self.t_msg['body']['params']['datetime'] = datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+        self.logger.info("Sending Message: {:s}: {:s}".format(key, json.dumps(self.t_msg)))
+        self.cmd_q.put(self.t_msg)
 
     def do_connect(self,line):
-        print("Connecting...")
+        self.ctl_q.put({"type":"CTL","cmd":"CONNECT"})
 
     def do_auto(self,line):
         '''
@@ -263,12 +183,10 @@ class Simple_CLI(cmd.Cmd, threading.Thread):
         '''
         pass
 
-
-
     def do_status(self, line):
         ''' Network Status '''
         print("Querying Network Status...")
-        self.cmd_q.put({"type":"CTL","cmd":"STATUS"})
+        self.ctl_q.put({"type":"CTL","cmd":"STATUS"})
         time.sleep(.1)
         if not self.rx_q.empty(): #Received a message from user
             msg = self.rx_q.get()
@@ -287,7 +205,7 @@ class Simple_CLI(cmd.Cmd, threading.Thread):
         ''' reset the program '''
         self.logger.info("Resetting Program.")
         print("Resetting Program....")
-        self.cmd_q.put({"type":"CTL","cmd":"RESET"})
+        self.ctl_q.put({"type":"CTL","cmd":"RESET"})
         time.sleep(.1)
 
     def do_clear(self,line):
@@ -296,7 +214,7 @@ class Simple_CLI(cmd.Cmd, threading.Thread):
 
     def do_exit(self, line):
         ''' Terminate the program '''
-        self.cmd_q.put({"type":"CTL","cmd":"EXIT"})
+        self.ctl_q.put({"type":"CTL","cmd":"EXIT"})
         return True
 
     def do_quit(self, line):
@@ -317,8 +235,6 @@ class Simple_CLI(cmd.Cmd, threading.Thread):
     #     return None
 
     def _initialize_commands(self):
-        ''' setup configuration data '''
-
         if self.cfg['msgs']['base_path'] == "cwd":
             self.cfg['msgs']['base_path'] = os.getcwd()
         fp_cfg = '/'.join([self.cfg['msgs']['base_path'],

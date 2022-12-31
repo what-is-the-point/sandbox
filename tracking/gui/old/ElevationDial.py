@@ -1,0 +1,436 @@
+#!/usr/bin/env python3
+#
+
+#import numpy
+#import time
+
+# First Qt and 2nd Qt are different.  You'll get errors if they're both not available,
+# hence the import-as to avoid name collisions
+import numpy as np
+from PyQt5 import Qt
+from PyQt5.QtCore import Qt as Qtc
+from PyQt5.QtCore import pyqtSignal, QPoint, pyqtProperty, QRect
+from PyQt5.QtWidgets import QFrame, QWidget, QVBoxLayout, QHBoxLayout, QLabel
+from PyQt5.QtGui import QPainter, QPalette, QFont, QFontMetricsF, QPen, QPolygon, QColor, QBrush
+
+class ElevationDialFrame(QFrame):
+    def __init__(self, lbl, cfg):
+        # Positions: 1 = above, 2=below, 3=left, 4=right
+        QFrame.__init__(self)
+        self.setMinimumSize(50, 50)
+        self.lbl = lbl
+        self.cfg = cfg
+        self.with_rate  = self.cfg['rate_dial']
+        self.rate_max   = self.cfg['rate_max']
+        self.rate_min   = self.cfg['rate_min']
+        self.angle_min  = self.cfg['min']
+        self.angle_max  = self.cfg['max']
+        self.cur_angle = 0.0
+        self.tar_angle = 0.0
+        self.rate      = 0.0
+        self.initUI()
+
+
+    def initUI(self):
+        self.ElevationDial = ElevationDial(self.lbl, self.cfg)
+        grid = Qt.QGridLayout()
+        grid.setSpacing(0)
+        grid.addWidget(self.ElevationDial,0,0,1,1)
+        self.setLayout(grid)
+        self.show()
+
+    def update_current_angle(self, cur_angle):
+        if cur_angle != self.cur_angle:
+            if   cur_angle < self.angle_min: self.cur_angle = self.angle_min  # Angle will already be negative
+            elif cur_angle > self.angle_max: self.cur_angle = self.angle_max  # Angle will already be negative
+            else: self.cur_angle = cur_angle
+        self.ElevationDial.update_current_angle(self.cur_angle)
+
+    def update_target_angle(self, tar_angle):
+        if tar_angle != self.tar_angle:
+            if   tar_angle < self.angle_min: self.tar_angle = self.angle_min  # Angle will already be negative
+            elif tar_angle > self.angle_max: self.tar_angle = self.angle_max  # Angle will already be negative
+            else: self.tar_angle = tar_angle
+        self.ElevationDial.update_target_angle(self.tar_angle)
+
+    def update_rate(self, rate):
+        if rate != self.rate:
+            if   rate < self.rate_min: self.rate = self.rate_min  # Angle will already be negative
+            elif rate > self.rate_max: self.rate = self.rate_max  # Angle will already be negative
+            else: self.rate = rate
+        self.ElevationDial.update_rate(self.rate)
+
+class ElevationDial(QWidget):
+    currentAngleChanged = pyqtSignal(float)
+    targetAngleChanged = pyqtSignal(float)
+    rateChanged = pyqtSignal(float)
+
+    def __init__(self,lbl,cfg):
+        QWidget.__init__(self, None)
+        self.setMinimumSize(200, 200)
+        self.setSizePolicy(Qt.QSizePolicy.Expanding, Qt.QSizePolicy.Expanding)
+        self._margins = 1
+        self.lbl = lbl
+        self.cfg = cfg
+
+        # Set parameters
+        self.with_rate  = self.cfg['rate_dial']
+        self.rate_max   = self.cfg['rate_max']
+        self.rate_min   = self.cfg['rate_min']
+        self.angle_min  = self.cfg['min']
+        self.angle_max  = self.cfg['max']
+        self.rateType   = 'colorbar' #might make this a bar indicator later
+
+        self.cur_angle  = 0.0
+        self.tar_angle  = 0.0
+        self.rate       = 0.0
+
+        self.textfont = QFont(self.font())
+        self.textfont.setPixelSize(16)
+        self.metrics = QFontMetricsF(self.textfont)
+        #self.penWidth = max(int(0.1 * min_size), 6)
+        self.penWidth = 1
+        self.halfPenWidth = int(self.penWidth / 2)
+
+        self.backgroundColor = QColor(0,0,0)
+        self.scaleColor      = QColor(255,255,255)
+        self.dialColor       = QColor(100,100,100)
+        self.curNeedleColor  = QColor(255,0,0)
+        self.tarNeedleColor  = QColor(0,100,255)
+        self.rateNeedleColor = QColor(255,0,255)
+
+        self.startAngle = 0.0
+        self.endAngle = 90
+        self.degScaler = 16.0 # The span angle must be specified in 1/16 of a degree units
+
+        self.scale = 1.6
+        self.h_offset = 25
+
+
+        self.darken()
+
+    def paintEvent(self, event):
+        painter = QPainter()
+        painter.begin(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+
+        self.drawMarkings(painter)
+        self.drawCurrentNeedle(painter)
+        self.drawTargetNeedle(painter)
+        if self.with_rate:
+            self.drawRateMarkings(painter)
+            if   self.rateType == 'needle'  : self.drawRateNeedle(painter)
+            elif self.rateType == 'colorbar': self.drawRateColorBar(painter)
+        self.drawCentralDial(painter)
+        # self.updateText(painter)
+        painter.end()
+
+    def drawMarkings(self, painter):
+        painter.save()
+        painter.translate(self.width()/1.1, self.height()/1.1-self.h_offset)
+        painter.scale(self.scale, self.scale)
+
+        font = QFont(self.font())
+        font.setPixelSize(1)
+        metrics = QFontMetricsF(font)
+        painter.setFont(font)
+        painter.setPen(QPen(QColor(self.scaleColor)))
+
+        painter.rotate(-95)
+        tickInterval = 5
+        arcRad = int(min(self.width()/2, self.height()/2))
+        i = -5
+        while i <= self.endAngle+5:
+            if (i < 0) or (i>self.endAngle):
+                font.setPixelSize(7)
+                painter.setPen(QPen(QColor(255,0,0)))
+            else:
+                font.setPixelSize(8)
+                painter.setPen(QPen(QColor(self.scaleColor)))
+            metrics = QFontMetricsF(font)
+            painter.setFont(font)
+
+            if (i == -5) or (i==95):
+                painter.drawLine(0, -(arcRad - 6), 0, -arcRad)
+                # painter.drawText(int(-metrics.width("{:d}".format(-10))/2.0), -arcRad-5, "{:d}".format(-5))
+            elif i % 30 == 0:
+                painter.drawLine(0, -(arcRad - 8), 0, -arcRad)
+                painter.drawText(int(-metrics.width("{:d}".format(i))/2.0), -arcRad-5, "{:d}".format(i))
+            else:
+                painter.drawLine(0, -(arcRad - 4), 0, -arcRad)
+            painter.rotate(tickInterval)
+            i += tickInterval
+
+        painter.restore()
+
+    def drawCentralDial(self,painter):
+        painter.save()
+        painter.translate(self.width()/1.1, self.height()/1.1-self.h_offset)
+        painter.scale(self.scale, self.scale)
+
+        #draw inner circle
+        brush = self.palette().brush(QPalette.Highlight)
+        brush.setColor(self.dialColor)
+        painter.setBrush(brush)
+        #painter.setPen(QPen(self.scaleColor, 1/2))
+        painter.setPen(QPen(Qtc.NoPen))
+        painter.setRenderHint(QPainter.Antialiasing)
+        fixed_radius = 5
+        center = QPoint(0, 0)
+        painter.drawEllipse(center, fixed_radius,fixed_radius)
+        painter.restore()
+
+    def updateText(self, painter):
+        painter.save()
+        # painter.translate(self.width()/3, self.height()/3)
+        scale = min(self.width()/100  * self.scale,
+                    self.height()/100 * self.scale)
+        painter.scale(scale,scale)
+        font = QFont(self.font())
+        pixelSize = 5
+        font.setPixelSize(pixelSize)
+        metrics = QFontMetricsF(font)
+        painter.setFont(font)
+
+        curAngleStr = "{:03.2f}".format(self.cur_angle)
+        tarAngleStr = "{:03.2f}".format(self.tar_angle)
+        rateStr     = "{:03.2f}".format(self.rate)
+
+        font.setUnderline(True)
+        font.setBold(True)
+        painter.setFont(font)
+        painter.setPen(QPen(QColor(self.scaleColor)))
+        painter.drawText(0, pixelSize, self.lbl)
+        font.setUnderline(False)
+        #font.setBold(False)
+        painter.setFont(font)
+        painter.setPen(QPen(QColor(self.curNeedleColor)))
+        painter.drawText(0, int((pixelSize*2)), curAngleStr)
+        painter.setPen(QPen(QColor(self.tarNeedleColor)))
+        painter.drawText(0, int((pixelSize*3)), tarAngleStr)
+        if self.with_rate:
+            painter.setPen(QPen(QColor(self.rateNeedleColor)))
+            painter.drawText(-60, int(-46+pixelSize+pixelSize/2.0-2), rateStr)
+        painter.restore()
+
+    def drawRateMarkings(self, painter):
+        painter.save()
+        painter.translate(self.width()  - self.width()/10,
+                          self.height() - self.height()/10)
+        scale = min((self.width() - self._margins)/self.w_scale,
+                    (self.height() - self._margins)/self.h_scale)
+        painter.scale(scale, scale)
+
+        font = QFont(self.font())
+        font.setPixelSize(6)
+        metrics = QFontMetricsF(font)
+        painter.setFont(font)
+
+        # startAngle = int(round(self.startAngle * self.degScaler, 0))
+        # endAngle   = int(round(self.endAngle   * self.degScaler, 0))
+        startAngle = int(round(90 * self.degScaler, 0))
+        endAngle   = int(round(180 * self.degScaler, 0))
+
+        painter.setPen(QPen(QColor(self.scaleColor), 0.5))
+        needleTipBrush = self.palette().brush(QPalette.Highlight)
+        needleTipBrush.setColor(self.backgroundColor)
+        painter.setBrush(needleTipBrush)
+
+        arcRad = 30
+        painter.drawArc(-arcRad,-arcRad,arcRad*2,arcRad*2, startAngle, endAngle)
+        painter.rotate(180)
+        step_deg = 18 #-10 to 10 increment marks
+        ticks = 11
+        # deg_p_tick = int((self.rate_max - self.rate_min)/(ticks-1))
+        deg_p_tick = int(1)
+        minor_tick = -(arcRad-2)
+        major_tick = -(arcRad-4)
+        i=int(self.rate_min)
+        step=0
+        while step <= 180:
+            if (step-90) % 45 == 0:
+                if (step==0) or (step==180):
+                    painter.drawLine(0, -(arcRad), 0, arcRad)
+                else:
+                    painter.drawLine(0, -(arcRad), 0, major_tick)
+                painter.drawText(int(-metrics.width("{:d}".format(i))/2.0), -(arcRad+1), "{:d}".format(i))
+            else:
+                painter.drawLine(0, -(arcRad), 0, minor_tick)
+            painter.rotate(step_deg)
+            step+=step_deg
+            i += deg_p_tick
+
+        painter.restore()
+
+    def drawCurrentNeedle(self, painter):
+        painter.save()
+        painter.translate(self.width()/1.1, self.height()/1.1-self.h_offset)
+        painter.scale(self.scale, self.scale)
+
+        painter.setPen(QPen(Qtc.NoPen))
+
+        # Rotate surface for painting
+        painter.rotate(-90)
+        intAngle = int(round(self.cur_angle))
+        painter.rotate(intAngle)
+
+        # Set up the brush
+        needleTipBrush = self.palette().brush(QPalette.Highlight)
+        needleTipColor = QColor(self.curNeedleColor)
+        needleTipBrush.setColor(needleTipColor)
+        painter.setBrush(needleTipBrush)
+        # draw the needle
+        needle_length = int(min(self.width()/2,self.height()/2))
+        painter.drawPolygon(QPolygon([QPoint(0,-needle_length),QPoint(3,-2),QPoint(-3,-2)]))
+        painter.restore()
+
+    def drawTargetNeedle(self, painter):
+        painter.save()
+        # Set up painter
+        painter.translate(self.width()/1.1, self.height()/1.1-self.h_offset)
+        painter.scale(self.scale, self.scale)
+        painter.setPen(QPen(Qtc.NoPen))
+
+        # Rotate surface for painting
+        painter.rotate(-90)
+        intAngle = int(round(self.tar_angle))
+        painter.rotate(intAngle)
+
+        needleTipBrush = self.palette().brush(QPalette.Highlight)
+        needleTipColor = QColor(self.tarNeedleColor)
+        needleTipBrush.setColor(needleTipColor)
+        painter.setBrush(needleTipBrush)
+        needle_length = int(min(self.width()/2,self.height()/2))
+        painter.drawPolygon(QPolygon([QPoint(0,-needle_length),QPoint(1,-2),QPoint(-1,-2)]))
+        painter.restore()
+
+    def drawTargetLine(self,painter):
+        painter.save()
+        # Set up painter
+        painter.translate(self.width()/1.1, self.height()/1.1-self.h_offset)
+        scale = 1.5
+        painter.scale(scale, scale)
+        #painter.setPen(QPen(Qtc.NoPen))
+
+        # Rotate surface for painting
+        painter.rotate(-90)
+        intAngle = int(round(self._tar_angle))
+        painter.rotate(intAngle)
+
+        # Now draw the red tip (on top of the black needle)
+        needleTipBrush = self.palette().brush(QPalette.Highlight)
+        needleTipColor = QColor(self.tarNeedleColor)
+        needleTipBrush.setColor(needleTipColor)
+        painter.setBrush(needleTipBrush)
+
+        # First QPoint is the center bottom apex of the needle
+        # painter.drawPolygon(QPolygon([QPoint(-3, -24), QPoint(0, -45), QPoint(3, -23),
+        #                               QPoint(0, -30), QPoint(-3, -23)]))
+        #painter.drawPolygon(QPolygon([QPoint(-3,-55), QPoint(3,-55), QPoint(0,-50)]))
+        #painter.drawPolygon(QPolygon([QPoint(-2,-2), QPoint(2,-2), QPoint(0,-50)]))
+        #painter.drawLine(0,0,0,-50)
+        painter.restore()
+
+    def drawRateNeedle(self, painter):
+        painter.save()
+        # Set up painter
+        # painter.translate(self.width()/2, self.height()/2)
+        painter.translate(self.width()-20, self.height()/2)
+        scale = min((self.width() - self._margins)/120.0,
+                    (self.height() - self._margins)/120.0)
+        painter.scale(scale, scale)
+        painter.setPen(QPen(Qtc.NoPen))
+
+        needleTipBrush = self.palette().brush(QPalette.Highlight)
+        needleTipBrush.setColor(self.rateNeedleColor)
+        painter.setBrush(needleTipBrush)
+
+        # Rotate surface for painting
+        painter.rotate(self._map(self.rate,self.rate_min, self.rate_max, -90,90))
+        needleLength = 20
+        painter.drawPolygon(QPolygon([QPoint(-1,-5), QPoint(1,-5), QPoint(0,-needleLength)]))
+        painter.restore()
+
+    def drawRateColorBar(self, painter):
+        painter.save()
+        # Set up painter
+        # painter.translate(self.width()/2, self.height()/2)
+        painter.translate(self.width()  - self.width()/10,
+                          self.height() - self.height()/10)
+        scale = min((self.width() - self._margins)/self.w_scale,
+                    (self.height() - self._margins)/self.h_scale)
+        painter.scale(scale, scale)
+
+        spanAngle = 90 - self._map(self.rate, self.rate_min, self.rate_max, 0, 180)
+        if self.rate < 0:
+            print("ping")
+            spanAngle = spanAngle
+            startAngle = 90
+        else:
+            print("pong")
+            spanAngle = spanAngle
+            startAngle = 90
+        print(self.rate,startAngle, spanAngle )
+
+        #startAngle = int(round(self.startAngle * self.degScaler, 1))
+        #spanAngle  = int(round(spanAngle * self.degScaler, 1))
+        startAngle = startAngle * self.degScaler
+        spanAngle  = spanAngle * self.degScaler
+
+        self.penWidth = 2
+        self.halfPenWidth = int(self.penWidth / 2)
+
+        alpha = int(self._map(abs(self.rate),0, self.rate_max, 0,255))
+        painter.setPen(QPen(QColor(255,0,255,alpha), self.penWidth))
+
+        dia = 20 - self.halfPenWidth
+        painter.rotate(0)
+        painter.drawArc(-dia,-dia,dia*2,dia*2, startAngle, spanAngle)
+
+
+        painter.restore()
+
+    def _map(self, val, src_min, src_max, dst_min, dst_max):
+        """
+        Scale the given value from the scale of src to the scale of dst.
+        """
+        return ((val - src_min) / (src_max-src_min)) * (dst_max-dst_min) + dst_min
+
+    def cur_angle(self):
+        return self.cur_angle
+
+    def tar_angle(self):
+        return self.tar_angle
+
+    def rate(self):
+        return self.rate
+
+    def update_current_angle(self, cur_angle):
+        self.cur_angle = cur_angle
+        #self.currentAngleChanged.emit(cur_angle)
+        self.update()
+
+    # cur_angle = pyqtProperty(float, cur_angle, update_current_angle)
+
+    def update_target_angle(self, tar_angle):
+        self.tar_angle = tar_angle
+        #self.targetAngleChanged.emit(tar_angle)
+        self.update()
+
+    #tar_angle = pyqtProperty(float, tar_angle, update_target_angle)
+
+    def update_rate(self, rate):
+        self.rate = rate
+        alpha = self._map(abs(self.rate),0, self.rate_max, 50,200)
+        self.rateNeedleColor = QColor(255,0,255,alpha)
+        #self.rateChanged.emit(rate)
+        self.update()
+
+    #rate = pyqtProperty(float, rate, update_rate)
+
+    def darken(self):
+        palette = Qt.QPalette()
+        palette.setColor(Qt.QPalette.Background,QColor(0,0,0))
+        palette.setColor(Qt.QPalette.WindowText,QColor(0,0,0))
+        palette.setColor(Qt.QPalette.Text,QColor(0,255,0))
+        self.setPalette(palette)

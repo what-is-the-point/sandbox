@@ -16,6 +16,7 @@ import socket
 import serial
 import errno
 import json
+import copy
 
 from queue import Queue
 from daemon.logger import *
@@ -58,13 +59,14 @@ class Serial_Thread(threading.Thread):
 
         self.tlm = { #Thread control Telemetry message
             "type":"TLM", #Message Type: Thread Telemetry
+            "src":"device",
             "connected":False, #Socket Connection Status
             "rx_count":0, #Number of received messages from device
             "tx_count":0, #Number of transmitted messages to device
         }
         self.rx_data = {  #Raw Data Message received from Socket
             'type': 'RX', #Message Type: RX (received message)
-            'ts':None,
+            'datetime':None,
             'msg': None
         }
         self.logger.info("Initialized {}".format(self.name))
@@ -75,10 +77,10 @@ class Serial_Thread(threading.Thread):
         while (not self._stop.isSet()):
             if not self.connected:
                 try:
-                    time.sleep(self.cfg['retry_time'])
                     self._Open_Serial(self.port)
                 except Exception as e:
                     self._handle_serial_exception(e)
+                    time.sleep(self.cfg['retry_time'])
             else:
                 try:
                     if not self.tx_q.empty():
@@ -87,9 +89,6 @@ class Serial_Thread(threading.Thread):
                             self._send_msg(msg['msg'])
                         elif msg['type']=="CTL":
                             if msg['cmd']=='RESET': self._reset()
-                    else:
-                        self._recv_data()
-
                 except Exception as e:
                     self._handle_serial_exception(e)
             time.sleep(0.001)
@@ -97,51 +96,36 @@ class Serial_Thread(threading.Thread):
         self.logger.warning('{:s} Terminated'.format(self.name))
         #sys.exit()
 
-    def _send_msg(self, msg):
-        buff = bytearray.fromhex(msg['hex'])
-        self.logger.info("Sending: {:s}: 0x{:s}".format(msg['name'], buff.hex()))
-
+    def send_msg(self, msg):
+        ''' called by device thread '''
+        self.logger.info("TX: {:s}: {:s}".format(msg['name'], msg['cmd']))
         self.ser.flush() #flush buffer
         try:
-            # ser_msg = "relay read {:d}\r".format(self.cfg['map'][rel])
-            # self.logger.info("Sending: 0x{:s}".format(buff.hex()))
-            self.ser.write(buff)
+            self.ser.write(bytes(msg['cmd'], 'ascii'))
             self.tlm['tx_count'] += 1
-            time.sleep(0.005)
-            #self.ser.readline() #clear the echo
-            #print line
-            # self.data_logger.info(' msg read: {:s}'.format(line))
-            # data = bytearray(data)
         except Exception as e:
             self.logger.debug(sys.exc_info())
             self._handle_serial_exception(e)
+        if msg['resp'] == None:
+            return None
+        else:
+            return self._recv_data(msg)
 
-        # self.rx_q.put(self.rel_tm)
-
-    def _recv_data(self):
-        data = bytearray()
-        while self.ser.inWaiting() > 0:
-            d = int.from_bytes(self.ser.read(),byteorder='big')
-            # print(d, type(d))
-            data.append(d)
+    def _recv_data(self, msg=None):
+        time.sleep(0.05)
+        data = self.ser.readline()
         if len(data) > 0:
-            self.rx_data['datetime'] = datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.%fZ")
-            self.logger.info("RX: {:s}".format(data.hex()))
+            ts = datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+            rx_data = {  #Raw Data Message received from Socket
+                'type': 'RX', #Message Type: RX (received message)
+                'datetime':ts,
+                'msg': {}
+            }
+            msg['resp'] = data.hex()
+            rx_data['msg'] = copy.deepcopy(msg)
+            self.logger.info("RX: {:s}".format(msg['resp']))
             self.tlm['rx_count'] += 1
-            self.rx_data['msg'] = data.hex()
-            self.rx_q.put(self.rx_data)
-
-    def _handle_recv_data(self, data):
-        # print(data.hex())
-        try:
-            if self.data_logger != None:
-                self.data_logger.info("RX: {:s}".format(data.hex()))
-            self.tlm['rx_count'] += 1
-            self.rx_data['msg'] = data.hex()
-            self.rx_q.put(self.rx_data)
-        except Exception as e:
-            self.logger.debug("Unhandled Receive Data Error")
-            self.logger.debug(sys.exc_info())
+            return rx_data
 
     def _Open_Serial(self, port):
         self.port = port
@@ -163,7 +147,7 @@ class Serial_Thread(threading.Thread):
 
     def _handle_serial_exception(self, e):
         #print e
-        self.logger.info("Fault with Serial Port: {:s}".format(self.dev))
+        self.logger.info("Fault with Serial Port: ")
         self.logger.info(e)
         try:
             self.ser.close()
@@ -172,6 +156,8 @@ class Serial_Thread(threading.Thread):
         self._err_count += 1
         self._ser_fault = True
         self.connected = False
+        self.tlm['connected']=self.connected
+        self.rx_q.put(self.tlm)
 
     ###################################################################
     #                   Thread Control Functions
@@ -179,6 +165,8 @@ class Serial_Thread(threading.Thread):
     def stop(self):
         #self.conn.close()
         self.logger.info('{:s} Terminating...'.format(self.name))
+        self.tlm['connected']=False
+        self.rx_q.put(self.tlm)
         self._stop.set()
 
     def stopped(self):

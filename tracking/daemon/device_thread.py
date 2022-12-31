@@ -42,10 +42,9 @@ class Device_Thread(threading.Thread):
         self.connected = False
         self.tx_q = Queue() # Main_Thread -> Device
         self.rx_q = Queue() # Main_thread <- Device
+        self.conn = None
 
         self._init_device()
-
-
 
     def _init_device(self):
         #Initialize connection method
@@ -54,18 +53,21 @@ class Device_Thread(threading.Thread):
                                                     self.cfg['main_log'],
                                                     self)
             self.conn.daemon = True
-            self.logger.info('Launching Device Connection Thread')
-            self.conn.start() #non-blocking
+            # self.logger.info('Launching Device Connection Thread')
+            # self.conn.start() #non-blocking
 
         if self.cfg['protocol'] == 'autostar':
             self.encoder = Autostar()
 
         self.tlm = { #Thread control Telemetry message
             "type":"TLM", #Message Type: Thread Telemetry
+            "src": "device",
             "connected":False, #Socket Connection Status
             "rx_count":0, #Number of received messages from device
             "tx_count":0, #Number of transmitted messages to device
+            "state": 'STANDBY'
         }
+        self.mode = 'STANDBY' # STANDBY, SLEW, GOTO, FAULT
 
     def run(self):
         '''
@@ -81,6 +83,22 @@ class Device_Thread(threading.Thread):
                 self._process_device_command(msg)
             time.sleep(0.001)
             pass
+
+    def _handle_connection(self, msg):
+        if msg['params']['connect']:
+            self.cfg['connection']['port']=msg['params']['port']
+            self.cfg['connection']['baud']=msg['params']['baud']
+            self.conn = serial_thread.Serial_Thread(self.cfg['connection'],
+                                                    self.cfg['main_log'],
+                                                    self)
+            self.conn.daemon = True
+            self.conn.start() #non-blocking
+        else:
+            # self.connected = False
+            # self.tlm['connected'] = self.connected
+            # self.rx_q.put(self.tlm)
+            self.conn.stop() #non-blocking
+
 
     #----CONNECTION THREAD FUNCTIONS----------------------------
     def _process_rx_q(self):
@@ -102,71 +120,27 @@ class Device_Thread(threading.Thread):
         """
         self.logger.info("Received Connection Thread Telemetry Message: {:s}".format(json.dumps(tlm)))
         self.tlm=tlm
+        for key in tlm.keys():
+            self.tlm[key]=tlm[key]
+        self.connected = self.tlm['connected']
+        self.rx_q.put(self.tlm)
 
     def _process_conn_rx_response(self, msg):
-        buff = bytearray.fromhex(msg['msg'])
-        self.logger.debug("Received Focus Motor msg: {:s}".format(buff.hex()))
+        # buff = bytearray.fromhex(msg['msg'])
+        # self.logger.debug(json.dumps(self.last_msg))
+        # self.logger.debug("Received Focus Motor msg: {:s}".format(buff.hex()))
+        print('ping', json.dumps(msg))
 
     def get_tlm(self):
-        '''
-        Called by Main Thread
-        '''
+        ''' Called by Main Thread '''
         return self.tlm
 
+    def get_status(self):
+        ''' Called by Main Thread '''
+        return self.encoder.get_status()
     #----CONNECTION THREAD FUNCTIONS----------------------------
 
-
-
-
-
-    #---- FOCUS MOTOR RESPONSE PROCESSING--------------------
-    #---- FROM FOCUS MOTOR TO DAEMON--------------------
-    def _set_mode(self, mode):
-        self.FocusMotor['mode'] = mode
-        self.dev_log.info("Set Device Thread Mode: {:s}".format(self.FocusMotor['mode']))
-
-    def _decode_focus_motor_response(self, msg):
-        buff = bytearray.fromhex(msg['msg'])
-        self.logger.debug("Received device msg: {:s}".format(buff.hex()))
-        decoded = None
-        decoded = self.fm.decode(buff)
-
-        if decoded is not None:
-            decoded['datetime']=msg['datetime']
-            self._update_focus_motor_state(decoded)
-            # if decoded['type'] == "position":
-            #     self.tlm['position'] = decoded['position']
-            # elif decoded['type'] == "move_done":
-            #     self.tlm['move_done'] = decoded['done']
-            # elif decoded['type'] == "dev_version":
-            #     self.tlm['version'] =  decoded['version']
-            # elif decoded['type'] == 'backlash':
-            #     self.tlm['backlash'] = decoded['backlash']
-
-            # if decoded['type'] == "position":
-            #     self.rx_q.put(decoded)
-
-    def _update_focus_motor_state(self, decoded):
-        self.FocusMotor['datetime'] = decoded['datetime']
-        if decoded['type'] == "position":
-            self.FocusMotor['position'] = decoded['position']
-        elif decoded['type'] == "move_done":
-            self.FocusMotor['move_done'] = decoded['done']
-        elif decoded['type'] == "dev_version":
-            self.FocusMotor['version'] =  decoded['version']
-        elif decoded['type'] == 'backlash':
-            self.FocusMotor['backlash'] = decoded['backlash']
-
-        # if decoded['type'] == "position":
-        #     self.rx_q.put(decoded)
-
-        print(self.FocusMotor)
-
-    #---- FROM FOCUS MOTOR TO DAEMON--------------------
-    #---- END FOCUS MOTOR RESPONSE PROCESSING--------------------
-
-    #---- FOCUS MOTOR COMMAND PROCESSING--------------------
-    #---- FROM DAEMON TO Focus Motor--------------------
+    #---- FROM DAEMON TO PTU--------------------
     def _process_device_command(self, msg):
         """
         Received Command From Main Thread Destined For device
@@ -175,46 +149,74 @@ class Device_Thread(threading.Thread):
         """
         # print(msg)
         self.logger.info("Received Device Command Plane Message: {:s}".format(json.dumps(msg)))
-        if   "position" in msg['type']: raw = self.fm.encode_get_position()
-        elif "stop" in msg['type']:
-            raw = self.fm.encode_stop()
-            self.SEQUENCE = "RUN"
-            self.dev_log.info("Set State = {}".format(self.SEQUENCE))
-        elif "slew" in msg['type']:     raw = self.fm.encode_slew(msg)
-        elif "goto" in msg['type']:
-            # raw = self.fm.encode_goto_position(msg['params']['position'])
-            raw = None
-            self._sequence_goto_position(msg['params']['position'])
+        if msg['type']=="connect":
+            self._handle_connection(msg)
+        elif self.connected:
+            try:
+                if "position" in msg['type']:
+                    resp = self.conn.send_msg(self.encoder.encode_get_azimuth())
+                    self._process_device_response(resp)
+                    time.sleep(0.1)
+                    resp = self.conn.send_msg(self.encoder.encode_get_elevation())
+                    self._process_device_response(resp)
+                elif 'slew' in msg['type']:
+                    self.conn.send_msg(self.encoder.encode_slew(msg['params']['dir']))
+                elif 'goto' in msg['type']:
+                    tar_az = msg['params']['azimuth']
+                    tar_el = msg['params']['elevation']
+                    resp = self.conn.send_msg(self.encoder.encode_set_tar_az(tar_az))
+                    resp['msg']['tar_az']=tar_az
+                    self._process_device_response(resp)
+                    resp = self.conn.send_msg(self.encoder.encode_set_tar_el(tar_el))
+                    resp['msg']['tar_el']=tar_el
+                    self._process_device_response(resp)
+                    if self.encoder.az_valid and self.encoder.el_valid:
+                        resp = self.conn.send_msg(self.encoder.encode_goto_target_position())
+                        self._process_device_response(resp)
+                elif msg['type']=='stop':
+                    resp = self.conn.send_msg(self.encoder.encode_stop_slew())
+                elif msg['type'] == 'speed':
+                    resp = self.conn.send_msg(self.encoder.encode_set_slew_speed(msg['params']['speed']))
+                    self._process_device_response(resp)
+                elif msg['type'] == 'focus_speed':
+                    resp = self.conn.send_msg(self.encoder.encode_focus_speed(msg['params']['speed']))
+                elif msg['type'] == 'focus_in':
+                    resp = self.conn.send_msg(self.encoder.encode_focus_inward())
+                elif msg['type'] == 'focus_out':
+                    resp = self.conn.send_msg(self.encoder.encode_focus_outward())
+                elif msg['type'] == 'focus_stop':
+                    resp = self.conn.send_msg(self.encoder.encode_focus_stop())
+            except Exception as e:
+                self.logger.info(e)
+                pass
 
-        if raw is not None:
-            self.last_type = msg['type']
-            if self.connected:
-                self.dev_log.warning("Sending: {:s}".format(msg['type']))
-                cmd_dict = self._encode_conn_command(msg['type'], raw)
-                self.conn.tx_q.put(cmd_dict)
+            if "position" in msg['type']:
+                self.dev_stat = self.encoder.get_status()
+                self.dev_stat['type'] = 'RX'
+                self.rx_q.put(self.dev_stat)
+
         # else: self.dev_log.warning("Invalid Command Parameters")
 
-    def _encode_conn_command(self, name="", raw=None):
+    def _encode_conn_command(self, msg=None):
         """
         Generates a Command Dictionary for the Connection Thread
-        Parameters:
-            name: the 'key' for the command
-             hex: hexstring of the binary data to write to the device
+        only used when using queues to send data......maybe deprecated
         """
-        cmd_dict={
-            "type":"CMD",
-            "cmd":"SEND",
-            "msg": {
-                "name": name,
-                "hex":raw.hex()
-            }
-        }
+        cmd_dict={"type":"CMD","cmd":"SEND","msg": msg}
         return cmd_dict
     #---- END Celestron Focus Motor COMMAND PROCESSING--------------------
+
+    def _process_device_response(self, resp):
+        self.encoder.decode(resp['msg'])
+
+
+
+
 
     #### Class Thread Handler ###########
     def stop(self):
         #self.conn.close()
+        if self.conn: self.conn.stop()
         self.logger.info('{:s} Terminating...'.format(self.name))
         self._stop.set()
 

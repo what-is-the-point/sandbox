@@ -1,0 +1,23 @@
+position:
+  desc: "Get Position"
+slew:
+  desc: "Slew (Left, Right, Up, Down)"
+  dir: ['u', 'd', 'r', 'l']
+speed:
+  desc: "Set Slew Speed: slow, medium, fast"
+  speed: ['slow', 'medium', 'fast']
+goto:
+  desc: "Go to Target Azimuth Elevation"
+  az: 0.0
+  el: 0.0
+stop:
+  desc: "Stop slew motion"
+focus_in:
+  desc: "Move Focuser In (toward objective, +)"
+focus_out:
+  desc: "Move Focuser Out (away from objective, -)"
+focus_speed:
+  desc: "Set Focuser Speed"
+  speed: ['slow', 'fast']
+focus_stop:
+  desc: "Stop focuser motion"

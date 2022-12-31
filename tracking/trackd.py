@@ -59,11 +59,9 @@ def configure_logs(cfg):
         # })
     return cfg
 
-def main(cfg):
-    main_thread = Main_Thread(cfg)
-    main_thread.daemon = True
-    main_thread.run()
-    sys.exit()
+# def main(cfg):
+
+    # sys.exit()
 
 
 if __name__ == '__main__':
@@ -99,8 +97,19 @@ if __name__ == '__main__':
     cfg = configure_logs(cfg)
     # print(json.dumps(cfg, indent=2))
     # sys.exit()
+    main_thread = Main_Thread(cfg)
+    main_thread.daemon = True
+    # main_thread.start()
 
-    main(cfg)
+    if cfg['thread_enable']['gui']: #Initialize Device Thread
+        app = Qt.QApplication(sys.argv)
+        app.setStyle('Windows')
+        win = MainWindow(cfg['gui'])
+        main_thread.set_gui_callback(win)
+        main_thread.start()
+        sys.exit(app.exec_())
+    else:
+        main_thread.run()
     sys.exit()
 
 
