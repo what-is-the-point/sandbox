@@ -59,6 +59,8 @@ class Autostar(object):
             'cur_el': self.cur_el,
             'tar_az': self.tar_az,
             'tar_el': self.tar_el,
+            'az_valid': self.az_valid,
+            'el_valid': self.el_valid,
             'slew_speed': self.slew_speed,
             'focus_speed': self.focus_speed,
             'goto_fault': self.goto_fault
@@ -87,7 +89,7 @@ class Autostar(object):
         msg = copy.deepcopy(self.msg)
         msg['name']='get_az'
         msg['cmd']=':GZ#'
-        msg['resp']='sDDD*MM#'
+        msg['resp']='DDD*MM#'
         return msg
 
     def encode_slew(self, dir=None):
@@ -102,6 +104,7 @@ class Autostar(object):
         elif dir == 'd': msg['cmd']=':Ms#'
         elif dir == 'l': msg['cmd']=':Me#' #Note this is counterintuitive...East implies right
         elif dir == 'r': msg['cmd']=':Mw#' #Note this is counterintuitive...West implies left
+        msg['resp']=None
         return msg
 
     def encode_set_slew_speed(self, speed='slow'):
@@ -115,7 +118,8 @@ class Autostar(object):
         if   speed == 'slow':   msg['cmd']=':Sw2#'
         elif speed == 'medium': msg['cmd']=':Sw3#'
         elif speed == 'fast':   msg['cmd']=':Sw4#'
-        msg['resp']={'0': 'valid','1': 'invalid'}
+        # msg['resp']={'0': 'valid','1': 'invalid'}
+        msg['resp']='1'
         return msg
 
     def encode_stop_slew(self, dir=None):
@@ -143,7 +147,8 @@ class Autostar(object):
         self.tar_az = az
         (frac, intnum) = math.modf(az)
         msg['cmd']=':Sz{:03d}*{:02d}#'.format(int(intnum), int(frac*60))
-        msg['resp']={'0': 'valid','1': 'invalid'}
+        # msg['resp']={'0': 'valid','1': 'invalid'}
+        msg['resp']='1'
         return msg
 
     def encode_set_tar_el(self, el=0.0):
@@ -158,7 +163,7 @@ class Autostar(object):
         self.tar_el = el
         (frac, intnum) = math.modf(el)
         msg['cmd']=':Sa{:02d}*{:02d}#'.format(int(intnum), int(frac*60))
-        msg['resp']={'0': 'valid','1': 'invalid'}
+        msg['resp']='1'
         return msg
 
     def encode_goto_target_position(self):
@@ -169,7 +174,7 @@ class Autostar(object):
         msg = copy.deepcopy(self.msg)
         msg['name']='goto'
         msg['cmd']=':MA#'
-        msg['resp']={'0': 'nofault','1': 'fault'}
+        msg['resp']='1'
         return msg
 
     def encode_focus_inward(self):
@@ -238,10 +243,10 @@ class Autostar(object):
             self.goto_fault = (not bool(buff))
         elif msg['name'] == 'set_az':
             self.az_valid = (bool(buff))
-            if self.az_valid: self.tar_az = msg['tar_az']
+            # if self.az_valid: self.tar_az = msg['tar_az']
         elif msg['name'] == 'set_el':
             self.el_valid = (bool(buff))
-            if self.el_valid: self.tar_el = msg['tar_el']
+            # if self.el_valid: self.tar_el = msg['tar_el']
         elif msg['name'] == 'speed':
             self.speed_valid = (bool(buff))
             if self.speed_valid:
