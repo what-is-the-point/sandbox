@@ -71,7 +71,7 @@ class AutoFrame(QGroupBox):
         self.query_cb.setStyleSheet("QCheckBox {font:10pt; \
                                      background-color:rgb(45,47,44); \
                                      color:rgb(255,0,0); }")
-        self.query_cb.setChecked(True)
+        self.query_cb.setChecked(False)
         self.query_cb.setFixedWidth(110)
         self.query_rate_le = Qt.QLineEdit()
         self.query_rate_le.setText("0.25")
@@ -93,7 +93,7 @@ class AutoFrame(QGroupBox):
         self.track_cb.setStyleSheet("QCheckBox {font:10pt; \
                                      background-color:rgb(45,47,44); \
                                      color:rgb(255,0,0); }")
-        self.track_cb.setChecked(True)
+        self.track_cb.setChecked(False)
         self.track_cb.setFixedWidth(110)
         self.track_rate_le = Qt.QLineEdit()
         self.track_rate_le.setText("0.25")

@@ -63,6 +63,7 @@ class SBS1_Thread(threading.Thread):
         self.target_icao = "ABCDEF"
 
         self.connected = False
+        self.reconnect = False
         self.rx_count = 0
         self.logger.info("Initializing {}".format(self.name))
 
@@ -87,7 +88,9 @@ class SBS1_Thread(threading.Thread):
             if not self.connected:
                 try:
                     time.sleep(0.5)
-                    # self._attempt_connect()
+                    if self.reconnect:
+                        self._attempt_connect()
+                        self._update_main_thread()
                 except Exception as e:
                     self.logger.debug(e)
                     self.connected = False
@@ -130,13 +133,16 @@ class SBS1_Thread(threading.Thread):
         self.sock.close()
         self._socket_watchdog.stop()
         self.connected = False
+        self.reconnect = False
 
     def _reset_socket(self):
         self.logger.debug('resetting socket...')
         self.sock.close()
         self.connected = False
+        self.reconnect = True
         # self._update_main_thread()
         self._init_socket()
+        self._update_main_thread()
 
     def _init_socket(self):
         self.buffer = ''

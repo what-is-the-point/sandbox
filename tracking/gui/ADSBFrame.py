@@ -173,7 +173,7 @@ class ADSBTargetSelectFrame(QGroupBox):
             "type":"CTL",
             "cmd":"select_icao",
             "src":"GUI.ADSB",
-            "dest":'ADSB',
+            "dest":'ADSB.MLAT',
             "params": {
                 "datetime": datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
                 "icao": self.target_icao
@@ -243,19 +243,44 @@ class ADSBFeedbackFrame(QGroupBox):
         self.parent = parent
         self.setTitle(name)
         self.setContentsMargins(1,10,1,1)
+        self.trk_msg = None
         self.initUI()
 
     def initUI(self):
         self.init_widgets()
         # self.connect_signals()
+        self.clock_timer = QtCore.QTimer(self)
+        self.clock_timer.setInterval(10)
+        self.clock_timer.timeout.connect(self._update_clock_time)
+        self.clock_timer.start()
+
+    def _update_clock_time(self):
+        now_ts = datetime.datetime.utcnow()
+        now_str = now_ts.strftime("%H:%M:%S.%fZ")
+        self.cur_time_lbl.setText("{:s}".format(now_str))
+        if self.trk_msg != None:
+            last_t_str = "{:s} {:s}".format(self.trk_msg['date_last'],
+                                            self.trk_msg['time_last'])
+            last_ts = datetime.datetime.strptime(last_t_str,
+                                                 "%Y-%m-%d %H:%M:%S.%fZ")
+            delta_t = (now_ts - last_ts).total_seconds() #convert to UTC from Eastern
+            self.age_lbl.setText("{:2.3f}".format(delta_t))
+            if (self.trk_msg['pos_date'] != None) and (self.trk_msg['pos_time'] != None):
+                pos_t_str = "{:s} {:s}".format(self.trk_msg['pos_date'],
+                                               self.trk_msg['pos_time'])
+                pos_ts = datetime.datetime.strptime(pos_t_str,
+                                                    "%Y-%m-%d %H:%M:%S.%fZ")
+                pos_delta_t = (now_ts - pos_ts).total_seconds() #convert to UTC from Eastern
+                self.pos_age_lbl.setText("{:2.3f}".format(pos_delta_t))
 
     def update_data(self, msg):
         # print('adsbfeedbackframe', msg)
+        self.trk_msg = msg
         self.icao_lbl.setText("{:s}".format(msg['icao']))
         self.call_lbl.setText("{:s}".format(msg['callsign']))
-        self.az_lbl.setText("{:3.2f}".format(msg['azimuth']))
-        self.el_lbl.setText("{:2.2f}".format(msg['elevation']))
-        self.range_lbl.setText("{:3.3f}".format(msg['range']))
+        self.az_lbl.setText("{:3.2f} / {:2.3f}".format(msg['azimuth'], msg['az_rate']))
+        self.el_lbl.setText("{:2.2f} / {:2.3f}".format(msg['elevation'], msg['el_rate']))
+        self.range_lbl.setText("{:3.2f} / {:2.3f}".format(msg['range'], msg['range_rate']))
         self.geo_alt_lbl.setText("{:6.1f}".format(msg['geo_alt']))
         self.baro_alt_lbl.setText("{:6.1f}".format(msg['baro_alt']))
         self.vert_rate_lbl.setText("{:3.1f}".format(msg['vert_rate']))
@@ -264,8 +289,7 @@ class ADSBFeedbackFrame(QGroupBox):
         self.source_lbl.setText("{:s}".format(msg['msg_src']))
         self.msg_cnt_lbl.setText("{:d}".format(msg['msg_cnt']))
         self.date_lbl.setText("{:s}".format(msg['date_last']))
-        self.time_lbl.setText("{:s}".format(msg['time_last']))
-        self.age_lbl.setText("{:2.6f}".format(msg['age']))
+        self.last_time_lbl.setText("{:s}".format(msg['time_last']))
 
     def init_widgets(self):
         lbl_width = 115
@@ -346,6 +370,21 @@ class ADSBFeedbackFrame(QGroupBox):
         range_hbox.addWidget(lbl)
         range_hbox.addWidget(self.range_lbl)
         range_hbox.addStretch(1)
+
+        lbl = Qt.QLabel("Position Age [s]:")
+        lbl.setAlignment(Qt.Qt.AlignRight|Qt.Qt.AlignVCenter)
+        lbl.setStyleSheet("QLabel {font:10pt; color:rgb(255,0,0);}")
+        lbl.setFixedWidth(lbl_width)
+        lbl.setFixedHeight(lbl_height)
+        self.pos_age_lbl = Qt.QLabel("XXX.XXX")
+        self.pos_age_lbl.setAlignment(Qt.Qt.AlignLeft|Qt.Qt.AlignVCenter)
+        self.pos_age_lbl.setStyleSheet("QLabel {font:10pt; color:rgb(255,0,0);}")
+        self.pos_age_lbl.setFixedWidth(val_width)
+        self.pos_age_lbl.setFixedHeight(lbl_height)
+        pos_age_hbox = Qt.QHBoxLayout()
+        pos_age_hbox.addWidget(lbl)
+        pos_age_hbox.addWidget(self.pos_age_lbl)
+        pos_age_hbox.addStretch(1)
 
         lbl = Qt.QLabel("Geo Altitude [ft]:")
         lbl.setAlignment(Qt.Qt.AlignRight|Qt.Qt.AlignVCenter)
@@ -467,22 +506,37 @@ class ADSBFeedbackFrame(QGroupBox):
         date_hbox.addWidget(self.date_lbl)
         date_hbox.addStretch(1)
 
-        lbl = Qt.QLabel("Last Time:")
+        lbl = Qt.QLabel("Last Msg Time:")
         lbl.setAlignment(Qt.Qt.AlignRight|Qt.Qt.AlignVCenter)
         lbl.setStyleSheet("QLabel {font:10pt; color:rgb(255,0,0);}")
         lbl.setFixedWidth(lbl_width)
         lbl.setFixedHeight(lbl_height)
-        self.time_lbl = Qt.QLabel("XXX.XXX")
-        self.time_lbl.setAlignment(Qt.Qt.AlignLeft|Qt.Qt.AlignVCenter)
-        self.time_lbl.setStyleSheet("QLabel {font:10pt; color:rgb(255,0,0);}")
-        self.time_lbl.setFixedWidth(val_width)
-        self.time_lbl.setFixedHeight(lbl_height)
-        time_hbox = Qt.QHBoxLayout()
-        time_hbox.addWidget(lbl)
-        time_hbox.addWidget(self.time_lbl)
-        time_hbox.addStretch(1)
+        self.last_time_lbl = Qt.QLabel("XXX.XXX")
+        self.last_time_lbl.setAlignment(Qt.Qt.AlignLeft|Qt.Qt.AlignVCenter)
+        self.last_time_lbl.setStyleSheet("QLabel {font:10pt; color:rgb(255,0,0);}")
+        self.last_time_lbl.setFixedWidth(val_width)
+        self.last_time_lbl.setFixedHeight(lbl_height)
+        last_time_hbox = Qt.QHBoxLayout()
+        last_time_hbox.addWidget(lbl)
+        last_time_hbox.addWidget(self.last_time_lbl)
+        last_time_hbox.addStretch(1)
 
-        lbl = Qt.QLabel("age [s]:")
+        lbl = Qt.QLabel("Current Time:")
+        lbl.setAlignment(Qt.Qt.AlignRight|Qt.Qt.AlignVCenter)
+        lbl.setStyleSheet("QLabel {font:10pt; color:rgb(255,0,0);}")
+        lbl.setFixedWidth(lbl_width)
+        lbl.setFixedHeight(lbl_height)
+        self.cur_time_lbl = Qt.QLabel("XXX.XXX")
+        self.cur_time_lbl.setAlignment(Qt.Qt.AlignLeft|Qt.Qt.AlignVCenter)
+        self.cur_time_lbl.setStyleSheet("QLabel {font:10pt; color:rgb(255,0,0);}")
+        self.cur_time_lbl.setFixedWidth(val_width)
+        self.cur_time_lbl.setFixedHeight(lbl_height)
+        cur_time_hbox = Qt.QHBoxLayout()
+        cur_time_hbox.addWidget(lbl)
+        cur_time_hbox.addWidget(self.cur_time_lbl)
+        cur_time_hbox.addStretch(1)
+
+        lbl = Qt.QLabel("Last Msg Age [s]:")
         lbl.setAlignment(Qt.Qt.AlignRight|Qt.Qt.AlignVCenter)
         lbl.setStyleSheet("QLabel {font:10pt; color:rgb(255,0,0);}")
         lbl.setFixedWidth(lbl_width)
@@ -503,6 +557,7 @@ class ADSBFeedbackFrame(QGroupBox):
         vbox.addLayout(az_deg_hbox)
         vbox.addLayout(el_deg_hbox)
         vbox.addLayout(range_hbox)
+        vbox.addLayout(pos_age_hbox)
         vbox.addLayout(geo_alt_hbox)
         vbox.addLayout(baro_alt_hbox)
         vbox.addLayout(vert_rate_hbox)
@@ -510,8 +565,9 @@ class ADSBFeedbackFrame(QGroupBox):
         vbox.addLayout(track_hbox)
         vbox.addLayout(source_hbox)
         vbox.addLayout(msg_cnt_hbox)
-        vbox.addLayout(date_hbox)
-        vbox.addLayout(time_hbox)
+        # vbox.addLayout(date_hbox)
+        vbox.addLayout(last_time_hbox)
+        vbox.addLayout(cur_time_hbox)
         vbox.addLayout(age_hbox)
         vbox.addStretch(1)
         self.setLayout(vbox)
@@ -602,17 +658,17 @@ class ADSBConnFrame(QGroupBox):
             self.conn_adsb_lbl.setText('DISCONNECTED')
             self.conn_adsb_lbl.setStyleSheet("QLabel {font: 12px; font-weight:bold; color:rgb(255,0,0);}")
 
-    def update_mlat_connection_state(self):
+    def update_mlat_connection_state(self, state):
         self.mlat_connected = state
-        if self.connected == True:
-            self.adsb_connect_button.setText('MLAT Disconnect')
-            self.conn_adsb_lbl.setText('CONNECTED')
-            self.conn_adsb_lbl.setStyleSheet("QLabel {font: 12px; font-weight:bold; color:rgb(0,255,0);}")
+        if self.mlat_connected == True:
+            self.mlat_connect_button.setText('MLAT Disconnect')
+            self.conn_mlat_lbl.setText('CONNECTED')
+            self.conn_mlat_lbl.setStyleSheet("QLabel {font: 12px; font-weight:bold; color:rgb(0,255,0);}")
             #self.update_timer.start()
-        elif self.connected == False:
-            self.adsb_connect_button.setText('MLAT Connect')
-            self.conn_adsb_lbl.setText('DISCONNECTED')
-            self.conn_adsb_lbl.setStyleSheet("QLabel {font: 12px; font-weight:bold; color:rgb(255,0,0);}")
+        elif self.mlat_connected == False:
+            self.mlat_connect_button.setText('MLAT Connect')
+            self.conn_mlat_lbl.setText('DISCONNECTED')
+            self.conn_mlat_lbl.setStyleSheet("QLabel {font: 12px; font-weight:bold; color:rgb(255,0,0);}")
 
     def init_widgets(self):
         lbl_width = 85

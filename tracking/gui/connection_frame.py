@@ -138,12 +138,16 @@ class ConnectionFrameSerial(QGroupBox):
         if self.connected == True:
             self.connect_button.setText('Disconnect')
             self.conn_status_lbl.setText('CONNECTED')
-            self.conn_status_lbl.setStyleSheet("QLabel {font-weight:bold; color:rgb(0,255,0);}")
+            self.conn_status_lbl.setStyleSheet("QLabel {font:10pt; \
+                                                        font-weight:bold; \
+                                                        color:rgb(0,255,0);}")
             #self.update_timer.start()
         elif self.connected == False:
             self.connect_button.setText('Connect')
             self.conn_status_lbl.setText('DISCONNECTED')
-            self.conn_status_lbl.setStyleSheet("QLabel {font-weight:bold; color:rgb(255,0,0);}")
+            self.conn_status_lbl.setStyleSheet("QLabel {font:10pt; \
+                                                        font-weight:bold; \
+                                                        color:rgb(255,0,0);}")
             #self.update_timer.stop()
 
     def init_widgets(self):

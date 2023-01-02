@@ -112,7 +112,7 @@ class Serial_Thread(threading.Thread):
             return self._recv_data(msg)
 
     def _recv_data(self, msg=None):
-        time.sleep(0.05)
+        time.sleep(0.1)
         data = self.ser.readline()
         if len(data) > 0:
             ts = datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.%fZ")

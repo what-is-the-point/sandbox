@@ -12,12 +12,12 @@ main:
     lon: -80.5674639
     alt: 572
 thread_enable:
-  dev: false #enable device thread, serial connection for autostar
+  dev: true #enable device thread, serial connection for autostar
   rmq: false # enable RabbitMQ Control Thread
   cli: false # enable the Command Line Interface Thread
   gui: true # enable the Command Line Interface Thread
   sbs1: true # enable the SBS1 ADSB Client Thread
-  mlat: false # enable the SBS1 ADSB Client Thread
+  mlat: true # enable the SBS1 ADSB Client Thread
 dev:
   name: "DeviceThread" #thread name
   type: "ETX-90" #thread name
@@ -34,7 +34,7 @@ dev:
 gui:
   name: 'GUI_Thread'
   title: "Autostar (ETX-60/70/90) Control GUI, v1.0.0"
-  update_rate: 0.5
+  query_rate: 1.0
   azimuth:
     home: 180.0
     min: 0.0

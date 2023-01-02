@@ -28,6 +28,9 @@ class StatusBar(QStatusBar):
         self.tar_azel_lbl.setText('XXX.XX / XX.XX')
         self.tar_icao_lbl.setText('ICAO: ABCDEF')
 
+    def update_q_size(self, q_size):
+        self.q_size_lbl.setText('Q: {:d}'.format(q_size))
+
     def update_icao(self, icao):
         self.tar_icao_lbl.setText('ICAO: {:s}'.format(icao))
 
@@ -43,7 +46,7 @@ class StatusBar(QStatusBar):
     def update_dev_conn_status(self,state):
         if state:
             # self.ptu_conn_lbl.setText('Autostar: CONNECTED')
-            self.ptu_conn_lbl.setStyleSheet("QLabel {font:10pt; color:rgb(0,255,0);}")
+            self.ptu_conn_lbl.setStyleSheet("QLabel {font:10pt; font-weight:bold; color:rgb(0,255,0);}")
         elif not state:
             # self.ptu_conn_lbl.setText('Autostar: DISCONNECTED')
             self.ptu_conn_lbl.setStyleSheet("QLabel {font:10pt; color:rgb(255,0,0);}")
@@ -55,6 +58,12 @@ class StatusBar(QStatusBar):
         elif not state:
             # self.ptu_conn_lbl.setText('Autostar: DISCONNECTED')
             self.adsb_conn_lbl.setStyleSheet("QLabel {font:10pt; color:rgb(255,0,0);}")
+
+    def update_mlat_connection_state(self,state):
+        if state:
+            self.mlat_conn_lbl.setStyleSheet("QLabel {font:10pt; font-weight:bold; color:rgb(0,255,0);}")
+        elif not state:
+            self.mlat_conn_lbl.setStyleSheet("QLabel {font:10pt; color:rgb(255,0,0);}")
 
 
     def init_widgets(self):
@@ -105,6 +114,12 @@ class StatusBar(QStatusBar):
         self.tar_icao_lbl.setStyleSheet("QLabel {font:10pt; color:rgb(255,255,0);}")
         self.tar_icao_lbl.setFixedHeight(20)
 
+        self.q_size_lbl = Qt.QLabel()
+        self.q_size_lbl.setAlignment(Qt.Qt.AlignLeft|Qt.Qt.AlignVCenter)
+        self.q_size_lbl.setText('Q: 0')
+        self.q_size_lbl.setStyleSheet("QLabel {font:10pt; color:rgb(255,0,0);}")
+        self.q_size_lbl.setFixedHeight(20)
+
         self.addWidget(self.ptu_conn_lbl)
         self.addWidget(self.adsb_conn_lbl)
         self.addWidget(self.mlat_conn_lbl)
@@ -112,3 +127,4 @@ class StatusBar(QStatusBar):
         self.addWidget(self.com_azel_lbl)
         self.addWidget(self.tar_azel_lbl)
         self.addWidget(self.tar_icao_lbl)
+        self.addWidget(self.q_size_lbl)

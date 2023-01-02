@@ -22,7 +22,7 @@ import binascii as ba
 import numpy
 import datetime
 from queue import Queue
-from logger import *
+from daemon.logger import *
 from daemon.watchdog_timer import *
 
 class MLAT_Thread(threading.Thread):
@@ -54,7 +54,13 @@ class MLAT_Thread(threading.Thread):
 
         self.rx_q  = Queue()
         self.tlm_q = Queue()
+        self.ctl_q = Queue()
         self.buffer = ''
+
+        self.ip   = self.cfg['connection']['ip']
+        self.port = self.cfg['connection']['port']
+
+        self.target_icao = "ABCDEF"
 
         self.connected = False
         self.rx_count = 0
@@ -62,6 +68,7 @@ class MLAT_Thread(threading.Thread):
 
         self.tlm = { #Thread control Telemetry message
             "type":"TLM", #Message Type: Thread Telemetry
+            "src":'adsb.mlat',
             "connected":False, #Socket Connection Status
             "rx_count":0, #Number of received messages from socket
             "ip":self.cfg['connection']['ip'], #Socket IP
@@ -71,12 +78,16 @@ class MLAT_Thread(threading.Thread):
 
     def run(self):
         self.logger.info('Launched {:s}'.format(self.name))
-        self._init_socket()
+        # self._init_socket()
         while (not self._stop.isSet()):
+            if (not self.ctl_q.empty()):
+                msg = self.ctl_q.get()
+                self._process_ctl_message(msg)
+
             if not self.connected:
                 try:
-                    time.sleep(0.05)
-                    self._attempt_connect()
+                    time.sleep(0.5)
+                    # self._attempt_connect()
                 except Exception as e:
                     self.logger.debug(e)
                     self.connected = False
@@ -95,12 +106,39 @@ class MLAT_Thread(threading.Thread):
         self.sock.close()
         self.logger.warning('{:s} Terminated'.format(self.name))
 
+    def _process_ctl_message(self,msg):
+        self.logger.info("received CTL Plane message: {:s}".format(json.dumps(msg)))
+        if msg['cmd']=='connect' and msg['params']['connect']:
+            if self.connected: self.logger.debug("Already Connected")
+            elif not self.connected:
+                self.ip = msg['params']['ip']
+                self.port = msg['params']['port']
+                self._init_socket()
+                self._attempt_connect()
+                self._update_main_thread()
+        elif msg['cmd']=='connect' and not msg['params']['connect']:
+            self._stop_socket()
+            self._update_main_thread()
+
+        elif msg['cmd'] =='select_icao':
+            self.target_icao = msg['params']['icao']
+        elif msg['cmd'] =='cancel_icao':
+            self.target_icao = None
+
+    def _stop_socket(self):
+        self.logger.debug('closing socket...')
+        self.sock.close()
+        self._socket_watchdog.stop()
+        self.connected = False
+
     def _reset_socket(self):
         self.logger.debug('resetting socket...')
         self.sock.close()
         self.connected = False
         # self._update_main_thread()
         self._init_socket()
+        self._attempt_connect()
+        self._update_main_thread()
 
     def _init_socket(self):
         self.buffer = ''
@@ -112,18 +150,20 @@ class MLAT_Thread(threading.Thread):
         self.logger.debug("Setup socket Watchdog")
 
     def _attempt_connect(self):
-        self.logger.info("Attempting to connect to: [{:s}, {:d}]".format(self.cfg['connection']['ip'],
-                                                                         self.cfg['connection']['port']))
-        self.sock.connect((self.cfg['connection']['ip'], self.cfg['connection']['port']))
-        self.logger.info("Connected to: [{:s}, {:d}]".format(self.cfg['connection']['ip'],
-                                                             self.cfg['connection']['port']))
+        try:
+            self.logger.info("Attempting to connect to: [{:s}, {:d}]".format(self.ip,self.port))
+            self.sock.connect((self.ip, self.port))
+            self.logger.info("Connected to: [{:s}, {:d}]".format(self.ip, self.port))
 
-        # time.sleep(0.01)
-        self.sock.settimeout(self.cfg['connection']['timeout'])   #set socket timeout
-        self.connected = True
-        self.tlm['connected'] = self.connected
-        self.tlm['rx_count']  = 0
-        self._socket_watchdog.start()
+            # time.sleep(0.01)
+            self.sock.settimeout(self.cfg['connection']['timeout'])   #set socket timeout
+            self.connected = True
+            self.tlm['connected'] = self.connected
+            self.tlm['rx_count']  = 0
+            self._socket_watchdog.start()
+        except Exception as e:
+            self.logger.debug('Failure in Connection Attempt...')
+            self.logger.debug(e)
 
     def _socket_watchdog_expired(self):
         self.logger.debug("Socket Watchdog Expired")
@@ -142,7 +182,6 @@ class MLAT_Thread(threading.Thread):
                 while self.buffer.find(delim) != -1:
                     line, self.buffer = self.buffer.split('\n', 1)
                     yield line.strip('\r')
-
         return
 
     def _handle_recv_data(self, data):
@@ -151,8 +190,9 @@ class MLAT_Thread(threading.Thread):
             self.tlm['rx_count'] += 1
             self.rx_count += 1
             msg = self._encode_sbs1_json(data.strip('\r').split(','))
-            self.rx_q.put(msg)
-            # self._socket_watchdog.reset(timeout=5)
+            if self.target_icao != None:
+                if msg['hex_ident'].upper() == self.target_icao.upper():
+                    self.rx_q.put(msg)
         except Exception as e:
             self.logger.debug("Unhandled Receive Data Error")
             self.logger.debug(sys.exc_info())

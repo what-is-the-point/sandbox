@@ -10,13 +10,16 @@ class GoToFrame(QGroupBox):
     gotoSignal = pyqtSignal(dict)
     stopSignal = pyqtSignal(dict)
     querySignal = pyqtSignal(dict)
-    def __init__(self, az=0.0, el=0.0, auto_rate=1, parent=None):
+    def __init__(self, az=0.0, el=0.0, query_rate=1, parent=None):
         super(GoToFrame, self).__init__()
         self.parent = parent
         self.cmd_az = az
         self.cmd_el = el
         self.tar_az = az
         self.tar_el = el
+        self.query_rate = query_rate
+        self._auto_track = False
+        self.dev_connected = False
         self.setTitle("Go To Control")
         self.setContentsMargins(1,5,1,1)
         # self.setStyleSheet("QGroupBox {font: 12px; color: rgb(255,255,255)}")
@@ -28,7 +31,13 @@ class GoToFrame(QGroupBox):
         self.setMinimumSize(50, 50)
         # self.setSizePolicy(Qt.QSizePolicy.Expanding, Qt.QSizePolicy.Expanding)
         self.init_widgets()
+        self.init_timers()
         self.connect_signals()
+
+    def init_timers(self):
+        self.query_timer = QtCore.QTimer(self)
+        self.query_timer.setInterval(1000)
+
 
     def connect_signals(self):
         self.stopButton.clicked.connect(self.stopButton_event)
@@ -36,6 +45,26 @@ class GoToFrame(QGroupBox):
         self.queryButton.clicked.connect(self.queryButton_event)
         self.azTextBox.editingFinished.connect(self._azimuth_edit)
         self.elTextBox.editingFinished.connect(self._elevation_edit)
+        self.query_rate_le.editingFinished.connect(self._query_rate_edit)
+
+        self.query_cb.clicked.connect(self._query_cb_event)
+        self.track_cb.clicked.connect(self._track_cb_event)
+
+        self.query_timer.timeout.connect(self.queryButton_event)
+
+    def _query_cb_event(self):
+        if self.query_cb.isChecked():
+            self.query_timer.setInterval(int(self.query_rate*1000))
+            self.query_timer.start()
+        else:
+            self.query_timer.stop()
+
+    def _track_cb_event(self):
+        self._auto_track = self.track_cb.isChecked()
+
+    def _query_rate_edit(self):
+        self.query_rate = float(self.query_rate_le.text())
+        self.query_timer.setInterval(int(self.query_rate*1000))
 
     def _azimuth_edit(self):
         self.cmd_az = float(self.azTextBox.text())
@@ -43,9 +72,32 @@ class GoToFrame(QGroupBox):
     def _elevation_edit(self):
         self.cmd_el = float(self.elTextBox.text())
 
+    def update_dev_conn_status(self,state):
+        self.dev_connected = state
+        if self.dev_connected:
+            self.track_cb.setStyleSheet("QCheckBox {font:10pt; \
+                                         background-color:rgb(45,47,44); \
+                                         color:rgb(255,0,0); }")
+            self.track_cb.setEnabled(True)
+        else:
+            self.query_cb.setChecked(False)
+            self.query_timer.stop()
+            self.track_cb.setChecked(False)
+            self.track_cb.setStyleSheet("QCheckBox {font:10pt; \
+                                         background-color:rgb(45,47,44); \
+                                         color:rgb(200,200,200); }")
+            self.track_cb.setEnabled(False)
+
+
     def update_target_angle(self,az,el):
         self.tarAzLabel.setText("{:3.2f}".format(az))
         self.tarElLabel.setText("{:2.2f}".format(el))
+        if self._auto_track:
+            self.cmd_az = az
+            self.cmd_el = el
+            self.azTextBox.setText("{:3.2f}".format(self.cmd_az))
+            self.elTextBox.setText("{:2.2f}".format(self.cmd_el))
+            # self.gotoButton_event()
 
     def gotoButton_event(self):
         self.cmd_az = float(self.azTextBox.text())
@@ -60,7 +112,7 @@ class GoToFrame(QGroupBox):
                 "elevation": self.cmd_el
             }
         }
-        self.gotoSignal.emit(msg)
+        if self.dev_connected: self.gotoSignal.emit(msg)
 
     def stopButton_event(self):
         msg={
@@ -71,7 +123,7 @@ class GoToFrame(QGroupBox):
                 "datetime": datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
             }
         }
-        self.stopSignal.emit(msg)
+        if self.dev_connected: self.stopSignal.emit(msg)
 
     def queryButton_event(self):
         msg={
@@ -82,7 +134,7 @@ class GoToFrame(QGroupBox):
                 "datetime": datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
             }
         }
-        self.querySignal.emit(msg)
+        if self.dev_connected: self.querySignal.emit(msg)
 
 
     def init_widgets(self):
@@ -140,45 +192,40 @@ class GoToFrame(QGroupBox):
         el_hbox.addWidget(self.tarElLabel)
         el_hbox.addStretch(1)
 
-        # self.auto_query_cb = Qt.QCheckBox("Auto Query [s]:")
-        # self.auto_query_cb.setStyleSheet("QCheckBox {font:10pt; \
-        #                                   background-color:rgb(45,47,44); \
-        #                                   color:rgb(255,0,0); }")
-        # self.auto_query_cb.setChecked(True)
-        # self.auto_query_cb.setFixedWidth(110)
-        # self.fb_query_rate_le = Qt.QLineEdit()
-        # self.fb_query_rate_le.setText("0.25")
-        # self.query_val = Qt.QDoubleValidator()
-        # self.fb_query_rate_le.setValidator(self.query_val)
-        # self.fb_query_rate_le.setEchoMode(Qt.QLineEdit.Normal)
-        # self.fb_query_rate_le.setStyleSheet("QLineEdit {font:10pt; background-color:rgb(200,75,75); color:rgb(0,0,0);}")
-        # self.fb_query_rate_le.setMaxLength(4)
-        # self.fb_query_rate_le.setFixedWidth(50)
-        # self.fb_query_rate_le.setFixedHeight(20)
-        # auto_query_hbox = Qt.QHBoxLayout()
-        # auto_query_hbox.addWidget(self.auto_query_cb)
-        # auto_query_hbox.addWidget(self.fb_query_rate_le)
-        # auto_query_hbox.addStretch(1)
-        #
-        # self.auto_track_cb = Qt.QCheckBox("Auto Track [s]:")
-        # self.auto_track_cb.setStyleSheet("QCheckBox {font:10pt; \
-        #                                   background-color:rgb(45,47,44); \
-        #                                   color:rgb(255,0,0); }")
-        # self.auto_track_cb.setChecked(True)
-        # self.auto_track_cb.setFixedWidth(110)
-        # self.at_query_rate_le = Qt.QLineEdit()
-        # self.at_query_rate_le.setText("0.25")
-        # self.query_val = Qt.QDoubleValidator()
-        # self.at_query_rate_le.setValidator(self.query_val)
-        # self.at_query_rate_le.setEchoMode(Qt.QLineEdit.Normal)
-        # self.at_query_rate_le.setStyleSheet("QLineEdit {font:10pt; background-color:rgb(200,75,75); color:rgb(0,0,0);}")
-        # self.at_query_rate_le.setMaxLength(4)
-        # self.at_query_rate_le.setFixedWidth(50)
-        # self.at_query_rate_le.setFixedHeight(20)
-        # auto_track_hbox = Qt.QHBoxLayout()
-        # auto_track_hbox.addWidget(self.auto_track_cb)
-        # auto_track_hbox.addWidget(self.at_query_rate_le)
-        # auto_track_hbox.addStretch(1)
+        self.query_cb = Qt.QCheckBox("Auto Query [s]:")
+        self.query_cb.setStyleSheet("QCheckBox {font:10pt; \
+                                     background-color:rgb(45,47,44); \
+                                     color:rgb(255,0,0); }")
+        self.query_cb.setChecked(False)
+        self.query_cb.setFixedWidth(110)
+        self.query_rate_le = Qt.QLineEdit()
+        self.query_rate_le.setText("{:1.3f}".format(self.query_rate))
+        self.query_val = Qt.QDoubleValidator()
+        self.query_rate_le.setValidator(self.query_val)
+        self.query_rate_le.setEchoMode(Qt.QLineEdit.Normal)
+        self.query_rate_le.setStyleSheet("QLineEdit {font:10pt; \
+                                          background-color:rgb(200,75,75); \
+                                          color:rgb(0,0,0);}")
+        self.query_rate_le.setMaxLength(4)
+        self.query_rate_le.setFixedWidth(50)
+        self.query_rate_le.setFixedHeight(20)
+        query_hbox = Qt.QHBoxLayout()
+        query_hbox.addWidget(self.query_cb)
+        query_hbox.addWidget(self.query_rate_le)
+        query_hbox.addStretch(1)
+
+        self.track_cb = Qt.QCheckBox("Auto Track")
+        self.track_cb.setStyleSheet("QCheckBox {font:10pt; \
+                                     background-color:rgb(45,47,44); \
+                                     color:rgb(200,200,200); }")
+        self.track_cb.setChecked(False)
+        self.track_cb.setFixedWidth(110)
+        self.track_cb.setEnabled(False)
+        track_hbox = Qt.QHBoxLayout()
+        track_hbox.addWidget(self.track_cb)
+        # track_hbox.addWidget(self.track_rate_le)
+        track_hbox.addStretch(1)
+
 
         self.gotoButton = Qt.QPushButton("GoTo")
         self.gotoButton.setStyleSheet("QPushButton {font:10pt; background-color:rgb(220,0,0);}")
@@ -194,12 +241,21 @@ class GoToFrame(QGroupBox):
         btn_hbox.addWidget(self.stopButton)
         btn_hbox.addWidget(self.queryButton)
 
-        vbox = Qt.QVBoxLayout()
-        vbox.setSpacing(3)
-        vbox.addLayout(az_hbox)
-        vbox.addLayout(el_hbox)
-        # vbox.addLayout(auto_query_hbox)
-        # vbox.addLayout(auto_track_hbox)
-        vbox.addLayout(btn_hbox)
-        vbox.addStretch(1)
-        self.setLayout(vbox)
+        vbox1 = Qt.QVBoxLayout()
+        vbox1.setSpacing(3)
+        vbox1.addLayout(az_hbox)
+        vbox1.addLayout(el_hbox)
+        vbox1.addLayout(btn_hbox)
+        vbox1.addStretch(1)
+
+        vbox2 = Qt.QVBoxLayout()
+        vbox2.setSpacing(3)
+        vbox2.addLayout(query_hbox)
+        vbox2.addLayout(track_hbox)
+        vbox2.addStretch(1)
+
+        hbox = Qt.QHBoxLayout()
+        hbox.addLayout(vbox1)
+        hbox.addLayout(vbox2)
+
+        self.setLayout(hbox)

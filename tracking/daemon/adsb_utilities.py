@@ -16,6 +16,7 @@ e_e     = 0.081819221456	    #Eccentricity of Earth
 
 track_msg = {
     "icao": None,      # MLAT, MSG, CLK, STA, AIR, ID, SEL
+    "tx_type": 0,
     "callsign":'',       # transmission type
     "azimuth":0.0,    # String. Database session record number.
     "elevation":0.0,   # String. Database aircraft record number.
@@ -29,7 +30,12 @@ track_msg = {
     "msg_cnt":0,    # String. Time the message was logged.
     "date_last":'', #last date stamp
     "time_last":'', #last time stamp
+    "pos_date":None, #last date stamp
+    "pos_time":None, #last time stamp
     "age":0.0, #seconds since last time stamp
+    "az_rate":0.0,
+    "el_rate":0.0,
+    "range_rate":0.0,
 }
 #--Range Calculations Functions------
 def LLH_To_ECEF(lat, lon, h):

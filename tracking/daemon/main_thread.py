@@ -28,6 +28,7 @@ from daemon.logger import *
 from daemon.device_thread import *
 from daemon.cli_thread import *
 from daemon.sbs1_thread import *
+from daemon.mlat_thread import *
 from daemon.adsb_utilities import *
 from gui.generic_gui import *
 # from daemon.Focus_Service import *
@@ -67,7 +68,8 @@ class Main_Thread(threading.Thread):
         self.obs_lon = self.cfg['main']['observer']['lon']
         self.obs_alt = self.cfg['main']['observer']['alt']
 
-        self.trk_msg = track_msg
+        self.trk_msg = copy.deepcopy(track_msg)
+        self.last_trk_msg = copy.deepcopy(track_msg)
 
 
     def run(self):
@@ -129,7 +131,7 @@ class Main_Thread(threading.Thread):
                     elif self.state == 'CALIBRATE':
                         self._do_calibrate()
 
-                time.sleep(0.001)
+                time.sleep(0.000001)
 
         except (KeyboardInterrupt): #when you press ctrl+c
             self.logger.warning('Caught CTRL-C, Terminating Threads...')
@@ -203,13 +205,11 @@ class Main_Thread(threading.Thread):
             if msg['msg_type'] == 'MSG':
                 self.trk_msg['msg_src'] = 'ADSB'
                 self.trk_msg['icao'] = msg['hex_ident']
+                self.trk_msg['tx_type'] = msg['tx_type']
 
                 time_str = "{:s} {:s}".format(msg['generated_date'], msg['generated_time'])
                 timestamp = datetime.datetime.strptime(time_str, "%Y/%m/%d %H:%M:%S.%f")
                 timestamp = timestamp+datetime.timedelta(seconds=18000)
-                now_ts = datetime.datetime.utcnow()
-                delta_t = (now_ts - timestamp).total_seconds() #convert to UTC from Eastern
-                self.trk_msg['age']=delta_t
                 self.trk_msg['date_last'] = timestamp.strftime("%Y-%m-%d")
                 self.trk_msg['time_last'] = timestamp.strftime("%H:%M:%S.%fZ")
                 self.trk_msg['msg_cnt'] += 1
@@ -226,6 +226,10 @@ class Main_Thread(threading.Thread):
                         self.trk_msg['range']     = razel['rho']
                         self.trk_msg['azimuth']   = razel['az']
                         self.trk_msg['elevation'] = razel['el']
+                        self.trk_msg['pos_date'] = timestamp.strftime("%Y-%m-%d")
+                        self.trk_msg['pos_time'] = timestamp.strftime("%H:%M:%S.%fZ")
+                        if self.last_trk_msg['pos_time'] != None:
+                            self._compute_razel_rates()
                     except Exception as e:
                         self.logger.debug("Error in RAZEL Function: {:s}".format(str(e)))
                 elif msg['tx_type'] == 4: #Extended Squitter Airborne Velocity Message
@@ -238,10 +242,27 @@ class Main_Thread(threading.Thread):
             track_msg = {}
             track_msg['src'] = 'track'
             track_msg['msg'] = copy.deepcopy(self.trk_msg)
+            self.last_trk_msg = copy.deepcopy(self.trk_msg)
             self.gui_thread.rx_q.put(track_msg)
         except Exception as e:
             self.logger.debug("Error in AutoTrack Function: {:s}".format(str(e)))
 
+
+    def _compute_razel_rates(self):
+        pos_t_str = "{:s} {:s}".format(self.trk_msg['pos_date'],
+                                       self.trk_msg['pos_time'])
+        pos_ts = datetime.datetime.strptime(pos_t_str,
+                                            "%Y-%m-%d %H:%M:%S.%fZ")
+
+        last_pos_t_str = "{:s} {:s}".format(self.last_trk_msg['pos_date'],
+                                            self.last_trk_msg['pos_time'])
+        last_pos_ts = datetime.datetime.strptime(last_pos_t_str,
+                                                "%Y-%m-%d %H:%M:%S.%fZ")
+        delta_t = (pos_ts - last_pos_ts).total_seconds()
+        # print(delta_t)
+        self.trk_msg['az_rate'] = (self.trk_msg['azimuth'] - self.last_trk_msg['azimuth'])/delta_t
+        self.trk_msg['el_rate'] = (self.trk_msg['elevation'] - self.last_trk_msg['elevation'])/delta_t
+        self.trk_msg['range_rate'] = (self.trk_msg['range'] - self.last_trk_msg['range'])/delta_t
 
 
 
@@ -265,9 +286,10 @@ class Main_Thread(threading.Thread):
         print(json.dumps(msg, indent=2))
         if 'type' in msg.keys():
             if msg['type']=='CTL':
-                if msg['cmd']=='EXIT': self.__terminate__()
+                if   msg['cmd']=='EXIT': self.__terminate__()
                 elif msg['cmd']=='location': self._update_observer_location(msg)
-                elif msg['dest']=='ADSB': self._process_adsb_ctl_message(msg)
+                elif 'ADSB' in msg['dest'] or 'MLAT' in msg['dest']: self._process_adsb_ctl_message(msg)
+                # if 'MLAT' in msg['dest']: self._process__ctl_message(msg)
 
         else:
             self.device_thread.tx_q.put(msg['body'])
@@ -298,11 +320,32 @@ class Main_Thread(threading.Thread):
                                                                                      self.obs_alt))
 
     def _process_adsb_ctl_message(self,msg):
-        print(msg)
-        if self.thread_enable['sbs1'] and msg['dest']=='ADSB':
+        # print(msg)
+
+        if self.thread_enable['sbs1'] and ('ADSB' in msg['dest']):
             self.sbs1_thread.ctl_q.put(msg)
-        if self.thread_enable['mlat'] and msg['dest']=='MLAT':
+        if self.thread_enable['mlat'] and ('MLAT' in msg['dest']):
             self.mlat_thread.ctl_q.put(msg)
+
+        if msg['cmd']=='select_icao':
+            self.trk_msg = copy.deepcopy(track_msg)
+            self.trk_msg['icao'] = msg['params']['icao']
+        if msg['cmd']=='cancel_icao':
+            self.trk_msg = copy.deepcopy(track_msg)
+
+
+
+
+
+
+    def _process_mlat_ctl_message(self,msg):
+        # print(msg)
+
+        if self.thread_enable['sbs1'] and ('ADSB' in msg['dest']):
+            self.sbs1_thread.ctl_q.put(msg)
+        if self.thread_enable['mlat'] and ('MLAT' in msg['dest']):
+            self.mlat_thread.ctl_q.put(msg)
+
 
         if msg['cmd']=='select_icao':
             self.trk_msg = copy.deepcopy(track_msg)
