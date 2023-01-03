@@ -201,43 +201,36 @@ class Main_Thread(threading.Thread):
 
     def _do_auto_track(self, msg):
         # print(msg)
+        self.trk_msg['icao'] = msg['hex_ident']
+        self.trk_msg['tx_type'] = msg['tx_type']
+        self.trk_msg['msg_cnt'] += 1
+        if msg['msg_type'] == 'MSG':
+            self.trk_msg['msg_src'] = 'ADSB'
+            self._adsb_sbs1_processing(msg)
+        elif msg['msg_type'] == 'MLAT':
+            self.trk_msg['msg_src'] = 'MLAT'
+            self._adsb_mlat_processing(msg)
+
+    def _adsb_sbs1_processing(self, msg):
+        time_str = "{:s} {:s}".format(msg['generated_date'], msg['generated_time'])
+        timestamp = datetime.datetime.strptime(time_str, "%Y/%m/%d %H:%M:%S.%f")
+        timestamp = timestamp+datetime.timedelta(seconds=18000)
+        self.trk_msg['date_last'] = timestamp.strftime("%Y-%m-%d")
+        self.trk_msg['time_last'] = timestamp.strftime("%H:%M:%S.%fZ")
         try:
-            if msg['msg_type'] == 'MSG':
-                self.trk_msg['msg_src'] = 'ADSB'
-                self.trk_msg['icao'] = msg['hex_ident']
-                self.trk_msg['tx_type'] = msg['tx_type']
-
-                time_str = "{:s} {:s}".format(msg['generated_date'], msg['generated_time'])
-                timestamp = datetime.datetime.strptime(time_str, "%Y/%m/%d %H:%M:%S.%f")
-                timestamp = timestamp+datetime.timedelta(seconds=18000)
-                self.trk_msg['date_last'] = timestamp.strftime("%Y-%m-%d")
-                self.trk_msg['time_last'] = timestamp.strftime("%H:%M:%S.%fZ")
-                self.trk_msg['msg_cnt'] += 1
-
-                if msg['tx_type'] == 1:
-                    self.trk_msg['callsign'] = msg['callsign']
-                elif msg['tx_type'] == 3: #Extended Squitter Airborne Position Message
-                    self.trk_msg['latitude'] = msg['latitude']
-                    self.trk_msg['longitude'] = msg['longitude']
-                    self.trk_msg['geo_alt'] = msg['altitude']
-                    try:
-                        razel = RAZEL(self.obs_lat, self.obs_lon, self.obs_alt / 1000.0,
-                                      msg['latitude'], msg['longitude'], msg['altitude']*0.0003048)
-                        self.trk_msg['range']     = razel['rho']
-                        self.trk_msg['azimuth']   = razel['az']
-                        self.trk_msg['elevation'] = razel['el']
-                        self.trk_msg['pos_date'] = timestamp.strftime("%Y-%m-%d")
-                        self.trk_msg['pos_time'] = timestamp.strftime("%H:%M:%S.%fZ")
-                        if self.last_trk_msg['pos_time'] != None:
-                            self._compute_razel_rates()
-                    except Exception as e:
-                        self.logger.debug("Error in RAZEL Function: {:s}".format(str(e)))
-                elif msg['tx_type'] == 4: #Extended Squitter Airborne Velocity Message
-                    self.trk_msg['speed'] = msg['ground_speed']
-                    self.trk_msg['track'] = msg['track']
-                    self.trk_msg['vert_rate'] = msg['vertical_rate']
-                elif msg['tx_type'] == 5: #Surveillance altitude Message, triggered by radar
-                    self.trk_msg['baro_alt'] = msg['altitude']
+            if msg['tx_type'] == 1:
+                self.trk_msg['callsign'] = msg['callsign']
+            elif msg['tx_type'] == 3: #Extended Squitter Airborne Position Message
+                self.trk_msg['latitude'] = msg['latitude']
+                self.trk_msg['longitude'] = msg['longitude']
+                self.trk_msg['geo_alt'] = msg['altitude']
+                self._razel_processing(msg)
+            elif msg['tx_type'] == 4: #Extended Squitter Airborne Velocity Message
+                self.trk_msg['speed'] = msg['ground_speed']
+                self.trk_msg['track'] = msg['track']
+                self.trk_msg['vert_rate'] = msg['vertical_rate']
+            elif msg['tx_type'] == 5: #Surveillance altitude Message, triggered by radar
+                self.trk_msg['baro_alt'] = msg['altitude']
 
             track_msg = {}
             track_msg['src'] = 'track'
@@ -245,25 +238,66 @@ class Main_Thread(threading.Thread):
             self.last_trk_msg = copy.deepcopy(self.trk_msg)
             self.gui_thread.rx_q.put(track_msg)
         except Exception as e:
-            self.logger.debug("Error in AutoTrack Function: {:s}".format(str(e)))
+            self.logger.debug("Error in SBS1 AutoTrack Function: {:s}".format(str(e)))
+            self.logger.debug(sys.exc_info())
+            self.logger.debug(json.dumps(msg))
 
+    def _adsb_mlat_processing(self, msg):
+        time_str = "{:s} {:s}".format(msg['generated_date'], msg['generated_time'])
+        timestamp = datetime.datetime.strptime(time_str, "%Y/%m/%d %H:%M:%S.%f")
+        # timestamp = timestamp+datetime.timedelta(seconds=18000)
+        self.trk_msg['date_last'] = timestamp.strftime("%Y-%m-%d")
+        self.trk_msg['time_last'] = timestamp.strftime("%H:%M:%S.%fZ")
+        try:
+            # self.trk_msg['callsign'] = msg['callsign']
+            self.trk_msg['latitude'] = msg['latitude']
+            self.trk_msg['longitude'] = msg['longitude']
+            self.trk_msg['geo_alt'] = msg['altitude']
+            self.trk_msg['speed'] = msg['ground_speed']
+            self.trk_msg['track'] = msg['track']
+            self.trk_msg['vert_rate'] = msg['vertical_rate']
+            self._razel_processing(msg, utc=True)
+            track_msg = {}
+            track_msg['src'] = 'track'
+            track_msg['msg'] = copy.deepcopy(self.trk_msg)
+            self.last_trk_msg = copy.deepcopy(self.trk_msg)
+            self.gui_thread.rx_q.put(track_msg)
+        except Exception as e:
+            self.logger.debug("Error in MLAT Autotrack processing: {:s}".format(str(e)))
+            self.logger.debug(sys.exc_info())
+            self.logger.debug(json.dumps(msg))
 
-    def _compute_razel_rates(self):
-        pos_t_str = "{:s} {:s}".format(self.trk_msg['pos_date'],
-                                       self.trk_msg['pos_time'])
-        pos_ts = datetime.datetime.strptime(pos_t_str,
-                                            "%Y-%m-%d %H:%M:%S.%fZ")
+    def _razel_processing(self, msg, utc = False):
+        time_str = "{:s} {:s}".format(msg['generated_date'], msg['generated_time'])
+        timestamp = datetime.datetime.strptime(time_str, "%Y/%m/%d %H:%M:%S.%f")
+        if not utc: timestamp = timestamp+datetime.timedelta(seconds=18000)
+        try:
+            razel = RAZEL(self.obs_lat, self.obs_lon, self.obs_alt / 1000.0,
+                          msg['latitude'], msg['longitude'], msg['altitude']*0.0003048)
+            self.trk_msg['range']     = razel['rho']
+            self.trk_msg['azimuth']   = razel['az']
+            self.trk_msg['elevation'] = razel['el']
+            self.trk_msg['pos_date'] = timestamp.strftime("%Y-%m-%d")
+            self.trk_msg['pos_time'] = timestamp.strftime("%H:%M:%S.%fZ")
+            if self.last_trk_msg['pos_time'] != None:
+                pos_t_str = "{:s} {:s}".format(self.trk_msg['pos_date'],
+                                               self.trk_msg['pos_time'])
+                pos_ts = datetime.datetime.strptime(pos_t_str,
+                                                    "%Y-%m-%d %H:%M:%S.%fZ")
 
-        last_pos_t_str = "{:s} {:s}".format(self.last_trk_msg['pos_date'],
-                                            self.last_trk_msg['pos_time'])
-        last_pos_ts = datetime.datetime.strptime(last_pos_t_str,
-                                                "%Y-%m-%d %H:%M:%S.%fZ")
-        delta_t = (pos_ts - last_pos_ts).total_seconds()
-        # print(delta_t)
-        self.trk_msg['az_rate'] = (self.trk_msg['azimuth'] - self.last_trk_msg['azimuth'])/delta_t
-        self.trk_msg['el_rate'] = (self.trk_msg['elevation'] - self.last_trk_msg['elevation'])/delta_t
-        self.trk_msg['range_rate'] = (self.trk_msg['range'] - self.last_trk_msg['range'])/delta_t
-
+                last_pos_t_str = "{:s} {:s}".format(self.last_trk_msg['pos_date'],
+                                                    self.last_trk_msg['pos_time'])
+                last_pos_ts = datetime.datetime.strptime(last_pos_t_str,
+                                                        "%Y-%m-%d %H:%M:%S.%fZ")
+                delta_t = (pos_ts - last_pos_ts).total_seconds()
+                # print(delta_t)
+                self.trk_msg['az_rate'] = (self.trk_msg['azimuth'] - self.last_trk_msg['azimuth'])/delta_t
+                self.trk_msg['el_rate'] = (self.trk_msg['elevation'] - self.last_trk_msg['elevation'])/delta_t
+                self.trk_msg['range_rate'] = (self.trk_msg['range'] - self.last_trk_msg['range'])/delta_t
+        except Exception as e:
+            self.logger.debug("Error in RAZEL Processing: {:s}".format(str(e)))
+            self.logger.debug(sys.exc_info())
+            self.logger.debug(json.dumps(msg))
 
 
 
@@ -283,7 +317,7 @@ class Main_Thread(threading.Thread):
 
     def _process_gui_message(self, msg):
         '''Process GUI Message for daemon/thread control'''
-        print(json.dumps(msg, indent=2))
+        # print(json.dumps(msg, indent=2))
         if 'type' in msg.keys():
             if msg['type']=='CTL':
                 if   msg['cmd']=='EXIT': self.__terminate__()

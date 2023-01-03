@@ -47,7 +47,7 @@ class MainWindow(Qt.QMainWindow):
         self.resize(700, 425)
         #self.setMinimumWidth(800)
         #self.setMaximumWidth(900)
-        #self.setContentsMargins(0,0,0,0)
+        #
         self.main_window = main_widget()
 
         self.cfg = cfg
@@ -63,6 +63,7 @@ class MainWindow(Qt.QMainWindow):
 
         self.darken()
         self.setFocus()
+
 
     def init_variables(self):
         self.connected = False      #TCP/IP Connection Status
@@ -284,7 +285,7 @@ class MainWindow(Qt.QMainWindow):
             self.StatusBar.update_mlat_connection_state(self.mlat_connected)
 
     def _update_device(self, msg):
-        print(msg)
+        # print(msg)
         if msg['type']=='TLM':
             self.dev_connected = bool(msg['connected'])
             self._update_dev_conn_status()
@@ -351,7 +352,8 @@ class MainWindow(Qt.QMainWindow):
         elif self.cfg['con']['type'] == 'serial':
             self.ConnectionFrame = ConnectionFrameSerial(self.cfg['con'])
 
-        self.GoToFrame      = GoToFrame(az=self.home_az,el=self.home_el, query_rate=self.cfg['query_rate'], parent=self)
+        # self.GoToFrame      = GoToFrame(az=self.home_az,el=self.home_el, query_rate=self.cfg['query_rate'], parent=self)
+        self.GoToFrame      = GoToFrame(az=self.cfg['azimuth'],el=self.cfg['elevation'], query_rate=self.cfg['query_rate'], parent=self)
         self.JoystickFrame  = JoystickFrame(cfg=self.cfg['joystick'], parent=self)
         self.AzimuthDial    = AzimuthDialFrame(lbl="Azimuth", cfg=self.cfg['azimuth'])
         self.ElevationDial  = ElevationDialFrame(lbl="Elevation", cfg=self.cfg['elevation'])

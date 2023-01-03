@@ -28,7 +28,7 @@ dev:
     baud: 9600
     startup_delay: 1 #thread initialization delay
     retry_time: 5 #rate in seconds to attempt device reconnection
-    timeout: 0.001 #Connection Timeout Window
+    timeout: 2.0 #Connection Timeout Window
     poll_rate: 1 #Rate at which to query tracker for feedback and status
     update_rate: 0.25 #Rate at which to send commands to tracker
 gui:
@@ -36,19 +36,23 @@ gui:
   title: "Autostar (ETX-60/70/90) Control GUI, v1.0.0"
   query_rate: 1.0
   azimuth:
-    home: 180.0
+    home: 0.0
     min: 0.0
     max: 360.0
-    rate_min: -10.0
-    rate_max: 10.0
+    trim: 0.1
+    auto_delta: 1.0
     rate_dial: false
+    rate_min: -5
+    rate_max: 5
   elevation:
     home: 0.0
     min: -5.0
     max: 95
-    rate_min: -5.0
-    rate_max: 5.0
+    trim: 0.0
+    auto_delta: 1.0
     rate_dial: false
+    rate_min: -5
+    rate_max: 5
   focuser:
     name: "Focuser Control"
   joystick:

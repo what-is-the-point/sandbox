@@ -570,6 +570,7 @@ class ADSBFeedbackFrame(QGroupBox):
         vbox.addLayout(cur_time_hbox)
         vbox.addLayout(age_hbox)
         vbox.addStretch(1)
+        vbox.setSpacing(3)
         self.setLayout(vbox)
 
 class ADSBConnFrame(QGroupBox):

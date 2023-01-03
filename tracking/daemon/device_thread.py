@@ -87,7 +87,7 @@ class Device_Thread(threading.Thread):
     #####################################################################
     def send_msg(self,msg):
         self.logger.info("TX: {:s}: {:s}".format(msg['name'], msg['cmd']))
-        # self.conn.reset_output_buffer() #flush buffer
+        self.conn.reset_output_buffer() #flush buffer
         try:
             self.conn.write(bytes(msg['cmd'], 'ascii'))
             self.tlm['tx_count'] += 1
@@ -96,13 +96,18 @@ class Device_Thread(threading.Thread):
 
         if msg['resp'] != None:
             time.sleep(0.05)
-            print(len(msg['resp']), msg['resp'])
+            # print(len(msg['resp']), msg['resp'])
             data = self.conn.read(size=len(msg['resp']))
-            print(len(data), data)
-            msg['resp'] = data.hex()
-            self.logger.info("RX: {:s}".format(msg['resp']))
-            self.tlm['rx_count'] += 1
-            self.encoder.decode(msg)
+            if len(data)>0:
+                # print(len(data), data)
+                msg['resp'] = data.hex()
+                self.logger.info("RX: {:s}".format(msg['resp']))
+                self.tlm['rx_count'] += 1
+                self.encoder.decode(msg)
+                self.conn.reset_input_buffer() #flush buffer
+            else:
+                self.logger.debug("Serial port timeout, is the mount on?")
+                self.conn.reset_input_buffer() #flush buffer
 
     def _process_device_command(self, msg):
         try:
@@ -151,11 +156,11 @@ class Device_Thread(threading.Thread):
             self._close_serial()
 
     def _open_serial(self):
-        # self.conn = serial.Serial(port = self.port,
-        #                           baudrate = self.baud,
-        #                           timeout = self.timeout)
         self.conn = serial.Serial(port = self.port,
-                                  baudrate = self.baud)
+                                  baudrate = self.baud,
+                                  timeout = self.timeout)
+        # self.conn = serial.Serial(port = self.port,
+        #                           baudrate = self.baud)
         self.logger.info("Opened Serial Port: [{:s} : {:d}]".format(self.port, self.baud))
         self._ser_fault = False
         self.connected = True
