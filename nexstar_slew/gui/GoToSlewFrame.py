@@ -177,28 +177,45 @@ class GoToSlewFrame(QGroupBox):
             if  self.az_delta <= 0: self.az_delta += 360
             elif self.az_delta > 0: self.az_delta -= 360
 
-        # if abs(self.az_delta) >= self.az_auto_delta[0]:
-        #     self.az_rate = 9
-        # elif (abs(self.az_delta) < self.az_auto_delta[0]) and (abs(self.az_delta) >= self.az_auto_delta[1]):
-        #     self.az_rate = 6
-        # elif (abs(self.az_delta) < self.az_auto_delta[1]):
-        #     self.az_rate = 3
-        # else:
-        #     self.az_rate = 0
+        if abs(self.az_delta) >= self.az_auto_delta[0]:
+            self.az_rate = 9
+        elif (abs(self.az_delta) < self.az_auto_delta[0]) and (abs(self.az_delta) >= self.az_auto_delta[1]):
+            self.az_rate = 8
+        elif (abs(self.az_delta) < self.az_auto_delta[1]) and (abs(self.az_delta) >= self.az_auto_delta[2]):
+            self.az_rate = 7
+        elif (abs(self.az_delta) < self.az_auto_delta[2]) and (abs(self.az_delta) >= self.az_auto_delta[3]):
+            self.az_rate = 6
+        elif (abs(self.az_delta) < self.az_auto_delta[3]) and (abs(self.az_delta) >= self.az_auto_delta[4]):
+            self.az_rate = 5
+        elif (abs(self.az_delta) < self.az_auto_delta[4]) and (abs(self.az_delta) >= self.az_auto_delta[5]):
+            self.az_rate = 4
+        elif (abs(self.az_delta) < self.az_auto_delta[5]):
+            self.az_rate = 3
+        else:
+            self.az_rate = 0
 
-        self.az_rate = int(abs(self.az_delta))
+        # self.az_rate = int(abs(self.az_delta))
         if self.az_rate >9: self.az_rate = 9
 
-        # if abs(self.el_delta) >= self.el_auto_delta[0]:
-        #     self.el_rate = 9
-        # elif (abs(self.el_delta) < self.el_auto_delta[0]) and (abs(self.el_delta) >= self.el_auto_delta[1]):
-        #     self.el_rate = 6
-        # elif (abs(self.el_delta) < self.el_auto_delta[1]):
-        #     self.el_rate = 3
-        # else:
-        #     self.el_rate = 0
-        self.el_rate = int(abs(self.el_delta))
-        if self.el_rate > 9: self.el_rate = 9
+        if abs(self.el_delta) >= self.el_auto_delta[0]:
+            self.el_rate = 9
+        elif (abs(self.el_delta) < self.el_auto_delta[0]) and (abs(self.el_delta) >= self.el_auto_delta[1]):
+            self.el_rate = 8
+        elif (abs(self.el_delta) < self.el_auto_delta[1]) and (abs(self.el_delta) >= self.el_auto_delta[2]):
+            self.el_rate = 7
+        elif (abs(self.el_delta) < self.el_auto_delta[2]) and (abs(self.el_delta) >= self.el_auto_delta[3]):
+            self.el_rate = 6
+        elif (abs(self.el_delta) < self.el_auto_delta[3]) and (abs(self.el_delta) >= self.el_auto_delta[4]):
+            self.el_rate = 5
+        elif (abs(self.el_delta) < self.el_auto_delta[4]) and (abs(self.el_delta) >= self.el_auto_delta[5]):
+            self.el_rate = 4
+        elif (abs(self.el_delta) < self.el_auto_delta[5]):
+            self.el_rate = 3
+        else:
+            self.el_rate = 0
+        # self.el_rate = int(abs(self.el_delta)/10)
+        # if self.el_rate > 9: self.el_rate = 9
+        # if self.el_rate < 3: self.el_rate = 3
 
         self.az_rate = int(self.az_rate * np.sign(self.az_delta))
         self.el_rate = int(self.el_rate * np.sign(self.el_delta))
