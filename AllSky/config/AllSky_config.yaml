@@ -1,0 +1,107 @@
+main:
+  name: "allskyd"
+  version: "1.0.0"
+  base_path: 'cwd'
+  log:
+    path: "/log/witp/trackd"
+    name: "main"
+    verbose: True
+    level: "DEBUG"
+  observer:
+    lat: 37.165657
+    lon: -80.445481
+    alt: 572
+thread_enable:
+  gui: false # enable the GUI Interface Thread
+  sbs1: true # enable the SBS1 ADSB Client Thread
+  mlat: False # enable the MLAT ADSB Client Thread
+  ascam: true # enable the allsky client thread
+  opencv: true # enable the opencv client thread
+gui:
+  name: 'GUI_Thread'
+  title: "Allsky Camera Control GUI, v1.0.0"
+  query_rate: 1.0
+  azimuth:
+    home: 0.0
+    min: 0.0
+    max: 360.0
+    trim: 0.0
+    auto_delta: [10.0,5.0,0.4,0.3,0.2,0.1]
+    rate_dial: false
+    rate_min: -5
+    rate_max: 5
+  elevation:
+    home: 0.0
+    min: -5.0
+    max: 95
+    trim: 0.0
+    auto_delta: [5.0,3.0,1.5,0.8,0.4,0.2]
+    rate_dial: false
+    rate_min: -5
+    rate_max: 5
+  focuser:
+    name: "Focuser Control"
+  joystick:
+    name: "Slew Control"
+    az_rate_lim: 9
+    el_rate_lim: 9
+  con:
+    name: "Nexstar Connection / Info"
+    type: "serial"
+    port: '/dev/ttyUSB0'
+    baud: 9600
+  adsb:
+    name: "ADSB Connection"
+    ip: '192.168.0.21'
+    sbs1_port: 30003
+    mlat_port: 30106
+  observer:
+    name: "Observer Location"
+    lat: 37.1548050
+    lon: -80.445481
+    alt: 631
+sbs1:
+  name: "adsb" #thread name
+  type: "sbs1" #type of device
+  connection:
+    type: "tcp" #Connection Type: TCP, UDP, Serial
+    ip: "192.168.0.21" #IP of dump1090
+    port: 30003 #SBS1 (CSV) dump1090 port
+    startup_delay: 1 #thread initialization delay
+    retry_time: 5 #rate in seconds to attempt device reconnection
+    watchdog_time: 10 #rate in seconds to attempt device reconnection
+    timeout: 0.001 #Connection Timeout Window
+  observer:
+    name: "Observer Location"
+    lat: 37.165657
+    lon: -80.5674639
+    alt: 631
+mlat:
+  name: "adsb" #thread name
+  type: "mlat" #type of device
+  connection:
+    type: "tcp" #Connection Type: TCP, UDP, Serial
+    ip: "192.168.0.21" #IP of dump1090
+    port: 30106 #MLAT (CSV) dump1090 port
+    startup_delay: 1 #thread initialization delay
+    retry_time: 10 #rate in seconds to attempt device reconnection
+    watchdog_time: 60 #rate in seconds to attempt device reconnection
+    timeout: 0.001 #Connection Timeout Window
+ascam:
+  name: "allsky" #thread name
+  type: "camera" #type of device
+  connection:
+    type: "usb" #Connection Type: TCP, UDP, Serial
+    startup_delay: 1 #thread initialization delay
+    retry_time: 5 #rate in seconds to attempt device reconnection
+    watchdog_time: 10 #rate in seconds to attempt device reconnection
+    timeout: 0.001 #Connection Timeout Window
+opencv:
+  name: "image_processing" #thread name
+  type: "overlay" #type of device
+  connection:
+    type: "queues" #Connection Type: TCP, UDP, Serial
+    startup_delay: 1 #thread initialization delay
+    retry_time: 5 #rate in seconds to attempt device reconnection
+    watchdog_time: 10 #rate in seconds to attempt device reconnection
+    timeout: 0.001 #Connection Timeout Window
